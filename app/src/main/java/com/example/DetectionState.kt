@@ -17,6 +17,16 @@ enum class DetectionResult(val label: String, val subtitleText: String, val colo
 }
 
 /**
+ * Direction mode for horizontal spray / recoil / Parkinson assist drag (đè ghìm vuốt trục ngang).
+ */
+enum class DragDirection(val label: String, val symbol: String) {
+    LEFT_TO_RIGHT("Trái sang Phải (→)", "→"),
+    RIGHT_TO_LEFT("Phải sang Trái (←)", "←"),
+    AUTO_TRACK("Theo cụm đỏ (🎯 Auto)", "🎯"),
+    SWEEP_BIDIRECTIONAL("Lắc hai chiều (⇄ Sweep)", "⇄")
+}
+
+/**
  * Real-time diagnostic statistics with inner-core and weighted detection details.
  */
 data class DetectionMetrics(
@@ -125,6 +135,25 @@ object DetectionState {
         get() = _horizontalScanRangeX.value
         set(value) {
             _horizontalScanRangeX.value = value.coerceIn(10, 80)
+        }
+
+    // Horizontal drag distance ΔX (pixels) for "đè ghìm vuốt trục ngang"
+    const val DEFAULT_DRAG_DISTANCE_X = 80f
+    private val _horizontalDragDistanceX = MutableStateFlow(DEFAULT_DRAG_DISTANCE_X)
+    val horizontalDragDistanceXFlow: StateFlow<Float> = _horizontalDragDistanceX.asStateFlow()
+    var horizontalDragDistanceX: Float
+        get() = _horizontalDragDistanceX.value
+        set(value) {
+            _horizontalDragDistanceX.value = value.coerceIn(10f, 500f)
+        }
+
+    // Horizontal drag direction mode
+    private val _horizontalDragDirection = MutableStateFlow(DragDirection.LEFT_TO_RIGHT)
+    val horizontalDragDirectionFlow: StateFlow<DragDirection> = _horizontalDragDirection.asStateFlow()
+    var horizontalDragDirection: DragDirection
+        get() = _horizontalDragDirection.value
+        set(value) {
+            _horizontalDragDirection.value = value
         }
 
     private val _isAutoHoldingActive = MutableStateFlow(false)

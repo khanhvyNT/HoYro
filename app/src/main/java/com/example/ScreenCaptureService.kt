@@ -434,11 +434,14 @@ class ScreenCaptureService : Service() {
 
                                 if (reflexDecision == ReflexDecision.REFLEX_TAP && DetectionState.isMotorReflexEnabled) {
                                     if (DetectionState.isParkinsonAutoHoldEnabled) {
-                                        // Automated sustained press-and-hold (ghìm đè giữ) for Parkinson's patients
+                                        // Automated sustained press-and-drag (đè ghìm vuốt trục ngang) for Parkinson's patients
                                         NeuralAccessibilityService.dispatchHold(
                                             x = DetectionState.TAP_X,
                                             y = DetectionState.TAP_Y,
                                             holdDurationMs = DetectionState.holdConfirmationDurationMs,
+                                            dragDistanceX = DetectionState.horizontalDragDistanceX,
+                                            dragDirection = DetectionState.horizontalDragDirection,
+                                            horizontalScanRedOffset = horizontalXOffset,
                                             detectionTimestamp = detectionTimestamp,
                                             onLatencyMeasured = { latencyMs ->
                                                 neuralReflex.recordLatency(latencyMs)
