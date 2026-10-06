@@ -44,13 +44,45 @@ object DetectionState {
     const val DEVICE_MODEL = "OPPO CPH2631"
     const val TARGET_WIDTH = 1604
     const val TARGET_HEIGHT = 720
-    // Sensory input coordinates (Screen color sensor)
-    const val TARGET_X = 801
-    const val TARGET_Y = 359
+    const val DEFAULT_TAP_X = 597f
+    const val DEFAULT_TAP_Y = 497f
+    const val DEFAULT_TARGET_X = 801
+    const val DEFAULT_TARGET_Y = 359
+    const val DEFAULT_HOLD_DURATION_MS = 600L
 
-    // Motor reflex response coordinates (Hospital patient reflex tap target)
-    const val TAP_X = 597f
-    const val TAP_Y = 497f
+    // Sensory input coordinates (Screen color sensor) - Customizable
+    private val _targetX = MutableStateFlow(DEFAULT_TARGET_X)
+    val targetXFlow: StateFlow<Int> = _targetX.asStateFlow()
+    var TARGET_X: Int
+        get() = _targetX.value
+        set(value) {
+            _targetX.value = value
+        }
+
+    private val _targetY = MutableStateFlow(DEFAULT_TARGET_Y)
+    val targetYFlow: StateFlow<Int> = _targetY.asStateFlow()
+    var TARGET_Y: Int
+        get() = _targetY.value
+        set(value) {
+            _targetY.value = value
+        }
+
+    // Motor reflex response coordinates (Hospital patient reflex tap target) - Customizable
+    private val _tapX = MutableStateFlow(DEFAULT_TAP_X)
+    val tapXFlow: StateFlow<Float> = _tapX.asStateFlow()
+    var TAP_X: Float
+        get() = _tapX.value
+        set(value) {
+            _tapX.value = value
+        }
+
+    private val _tapY = MutableStateFlow(DEFAULT_TAP_Y)
+    val tapYFlow: StateFlow<Float> = _tapY.asStateFlow()
+    var TAP_Y: Float
+        get() = _tapY.value
+        set(value) {
+            _tapY.value = value
+        }
 
     // Configurable ROI settings
     var roiRadius: Int = 10 // ROI diameter = 20px
@@ -58,7 +90,7 @@ object DetectionState {
     var centerPriorityEnabled: Boolean = true // Always prioritize center core over background
     var sensitivityThreshold: Float = 1.0f // Sensitivity multiplier
 
-    // Temporal verification / Anti-fly noise filter (500ms - 800ms hold requirement)
+    // Temporal verification / Anti-fly noise filter (Arbitrary customizable hold requirement)
     private val _isHoldVerificationEnabled = MutableStateFlow(true)
     val isHoldVerificationEnabledFlow: StateFlow<Boolean> = _isHoldVerificationEnabled.asStateFlow()
     var isHoldVerificationEnabled: Boolean
@@ -67,12 +99,12 @@ object DetectionState {
             _isHoldVerificationEnabled.value = value
         }
 
-    private val _holdConfirmationDurationMs = MutableStateFlow(600L) // Default 600ms (500-800ms range)
+    private val _holdConfirmationDurationMs = MutableStateFlow(DEFAULT_HOLD_DURATION_MS)
     val holdConfirmationDurationMsFlow: StateFlow<Long> = _holdConfirmationDurationMs.asStateFlow()
     var holdConfirmationDurationMs: Long
         get() = _holdConfirmationDurationMs.value
         set(value) {
-            _holdConfirmationDurationMs.value = value.coerceIn(500L, 800L)
+            _holdConfirmationDurationMs.value = value.coerceAtLeast(0L)
         }
 
     // Neural reflex motor response enable flag & reactive StateFlow

@@ -47,17 +47,21 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -240,6 +244,9 @@ fun ColorDetectorApp() {
                 isAccessibilityActive = isAccessibilityActive
             )
 
+            // Pre-Start Edge Trigger (x, y) & Hold Duration (ms) Configuration Card
+            PreStartParametersConfigCard(isRunning = isRunning)
+
             // Permissions Checklist Card
             PermissionsCard(
                 hasOverlayPermission = hasOverlayPermission,
@@ -408,6 +415,11 @@ fun RunningBadge(isRunning: Boolean) {
 
 @Composable
 fun DeviceSpecsCard() {
+    val targetX by DetectionState.targetXFlow.collectAsStateWithLifecycle()
+    val targetY by DetectionState.targetYFlow.collectAsStateWithLifecycle()
+    val tapX by DetectionState.tapXFlow.collectAsStateWithLifecycle()
+    val tapY by DetectionState.tapYFlow.collectAsStateWithLifecycle()
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
@@ -436,7 +448,11 @@ fun DeviceSpecsCard() {
                 style = MaterialTheme.typography.bodySmall
             )
             Text(
-                text = "• Tọa độ tâm ngắm (Crosshair): X = ${DetectionState.TARGET_X}, Y = ${DetectionState.TARGET_Y}",
+                text = "• Tọa độ tâm ngắm cảm biến (Sensor): X = $targetX, Y = $targetY",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = "• Tọa độ phản xạ Edge Trigger: X = ${tapX.toInt()}, Y = ${tapY.toInt()}",
                 style = MaterialTheme.typography.bodySmall
             )
             Text(
@@ -725,6 +741,10 @@ fun PatientNeuralStatusCard(
 ) {
     val context = LocalContext.current
     val isMotorEnabled by DetectionState.isMotorReflexEnabledFlow.collectAsStateWithLifecycle()
+    val tapX by DetectionState.tapXFlow.collectAsStateWithLifecycle()
+    val tapY by DetectionState.tapYFlow.collectAsStateWithLifecycle()
+    val targetX by DetectionState.targetXFlow.collectAsStateWithLifecycle()
+    val targetY by DetectionState.targetYFlow.collectAsStateWithLifecycle()
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -807,7 +827,7 @@ fun PatientNeuralStatusCard(
                             color = sensorColor
                         )
                         Text(
-                            text = "Sensor: (801, 359)",
+                            text = "Sensor: ($targetX, $targetY)",
                             fontSize = 10.sp,
                             color = Color(0xFF64748B)
                         )
@@ -829,7 +849,7 @@ fun PatientNeuralStatusCard(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "TAP (${DetectionState.TAP_X.toInt()}, ${DetectionState.TAP_Y.toInt()})",
+                            text = "TAP (${tapX.toInt()}, ${tapY.toInt()})",
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Black,
                             color = if (isMotorEnabled && isAccessibilityActive) Color(0xFF38BDF8) else Color(0xFF64748B)
@@ -1097,6 +1117,290 @@ fun PatientNeuralStatusCard(
 }
 
 @Composable
+fun PreStartParametersConfigCard(isRunning: Boolean) {
+    val tapX by DetectionState.tapXFlow.collectAsStateWithLifecycle()
+    val tapY by DetectionState.tapYFlow.collectAsStateWithLifecycle()
+    val holdDuration by DetectionState.holdConfirmationDurationMsFlow.collectAsStateWithLifecycle()
+    val targetX by DetectionState.targetXFlow.collectAsStateWithLifecycle()
+    val targetY by DetectionState.targetYFlow.collectAsStateWithLifecycle()
+
+    var tapXText by remember(tapX) { mutableStateOf(tapX.toInt().toString()) }
+    var tapYText by remember(tapY) { mutableStateOf(tapY.toInt().toString()) }
+    var holdDurationText by remember(holdDuration) { mutableStateOf(holdDuration.toString()) }
+    var targetXText by remember(targetX) { mutableStateOf(targetX.toString()) }
+    var targetYText by remember(targetY) { mutableStateOf(targetY.toString()) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF0F172A)
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            1.5.dp,
+            if (!isRunning) Color(0xFF38BDF8) else Color(0xFF334155)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "TÙY CHỈNH THÔNG SỐ KHỞI CHẠY",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF38BDF8)
+                    )
+                    Text(
+                        text = "Thiết lập trước khi bấm START DETECTION",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF94A3B8)
+                    )
+                }
+                Surface(
+                    color = if (!isRunning) Color(0xFF065F46) else Color(0xFF374151),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = if (!isRunning) "SẴN SÀNG CHỈNH SỬA ✓" else "🔒 ĐANG CHẠY",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (!isRunning) Color(0xFF34D399) else Color(0xFF9CA3AF),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            // 1. Edge Trigger (X, Y) Coordinates
+            Text(
+                text = "1. TỌA ĐỘ PHẢN XẠ EDGE TRIGGER TAP (X, Y):",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFE2E8F0)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = tapXText,
+                    onValueChange = { newText ->
+                        tapXText = newText
+                        newText.toFloatOrNull()?.let { DetectionState.TAP_X = it }
+                    },
+                    label = { Text("Edge Trigger X", fontSize = 11.sp) },
+                    modifier = Modifier.weight(1f),
+                    enabled = !isRunning,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0xFF475569)
+                    )
+                )
+
+                OutlinedTextField(
+                    value = tapYText,
+                    onValueChange = { newText ->
+                        tapYText = newText
+                        newText.toFloatOrNull()?.let { DetectionState.TAP_Y = it }
+                    },
+                    label = { Text("Edge Trigger Y", fontSize = 11.sp) },
+                    modifier = Modifier.weight(1f),
+                    enabled = !isRunning,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0xFF475569)
+                    )
+                )
+            }
+
+            // Quick preset chips for Edge Trigger
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Surface(
+                    modifier = Modifier
+                        .clickable(enabled = !isRunning) {
+                            DetectionState.TAP_X = DetectionState.DEFAULT_TAP_X
+                            DetectionState.TAP_Y = DetectionState.DEFAULT_TAP_Y
+                            tapXText = DetectionState.DEFAULT_TAP_X.toInt().toString()
+                            tapYText = DetectionState.DEFAULT_TAP_Y.toInt().toString()
+                        },
+                    color = Color(0xFF1E293B),
+                    shape = RoundedCornerShape(6.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569))
+                ) {
+                    Text(
+                        text = "Mặc định (${DetectionState.DEFAULT_TAP_X.toInt()}, ${DetectionState.DEFAULT_TAP_Y.toInt()})",
+                        fontSize = 10.sp,
+                        color = Color(0xFF38BDF8),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+
+                Surface(
+                    modifier = Modifier
+                        .clickable(enabled = !isRunning) {
+                            DetectionState.TAP_X = 1205f
+                            DetectionState.TAP_Y = 479f
+                            tapXText = "1205"
+                            tapYText = "479"
+                        },
+                    color = Color(0xFF1E293B),
+                    shape = RoundedCornerShape(6.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569))
+                ) {
+                    Text(
+                        text = "Gốc (1205, 479)",
+                        fontSize = 10.sp,
+                        color = Color(0xFF94A3B8),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            // 2. Thời gian Hold (ms)
+            Text(
+                text = "2. THỜI GIAN HOLD XÁC NHẬN (HOLD DURATION MS):",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFE2E8F0)
+            )
+
+            OutlinedTextField(
+                value = holdDurationText,
+                onValueChange = { newText ->
+                    holdDurationText = newText
+                    newText.toLongOrNull()?.let { DetectionState.holdConfirmationDurationMs = it }
+                },
+                label = { Text("Thời gian Hold (ms)", fontSize = 11.sp) },
+                supportingText = {
+                    Text(
+                        "Tùy chỉnh bất kỳ số ms nào (0ms = phản xạ tức thì, 200, 500, 600, 800, 1000...)",
+                        fontSize = 10.sp,
+                        color = Color(0xFF94A3B8)
+                    )
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isRunning,
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = Color(0xFF38BDF8),
+                    unfocusedBorderColor = Color(0xFF475569)
+                )
+            )
+
+            // Hold preset chips
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf(0L, 200L, 500L, 600L, 800L, 1000L).forEach { ms ->
+                    val isSelected = (holdDuration == ms)
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(enabled = !isRunning) {
+                                DetectionState.holdConfirmationDurationMs = ms
+                                holdDurationText = ms.toString()
+                            },
+                        color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
+                        shape = RoundedCornerShape(6.dp),
+                        border = androidx.compose.foundation.BorderStroke(
+                            1.dp,
+                            if (isSelected) Color(0xFF38BDF8) else Color(0xFF334155)
+                        )
+                    ) {
+                        Box(
+                            modifier = Modifier.padding(vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = "${ms}ms",
+                                fontSize = 10.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Color.White else Color(0xFF94A3B8)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // 3. Sensor Coordinates (X, Y)
+            Text(
+                text = "3. TỌA ĐỘ CẢM BIẾN NHẬN DIỆN MÀU (SENSOR X, Y):",
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFE2E8F0)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = targetXText,
+                    onValueChange = { newText ->
+                        targetXText = newText
+                        newText.toIntOrNull()?.let { DetectionState.TARGET_X = it }
+                    },
+                    label = { Text("Sensor X", fontSize = 11.sp) },
+                    modifier = Modifier.weight(1f),
+                    enabled = !isRunning,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0xFF475569)
+                    )
+                )
+
+                OutlinedTextField(
+                    value = targetYText,
+                    onValueChange = { newText ->
+                        targetYText = newText
+                        newText.toIntOrNull()?.let { DetectionState.TARGET_Y = it }
+                    },
+                    label = { Text("Sensor Y", fontSize = 11.sp) },
+                    modifier = Modifier.weight(1f),
+                    enabled = !isRunning,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0xFF475569)
+                    )
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun PermissionsCard(
     hasOverlayPermission: Boolean,
     hasNotificationPermission: Boolean,
@@ -1346,10 +1650,13 @@ fun SimulationCard(
                 )
             }
 
-            // Test Motor Tap at (597, 497)
+            val tapX by DetectionState.tapXFlow.collectAsStateWithLifecycle()
+            val tapY by DetectionState.tapYFlow.collectAsStateWithLifecycle()
+            val holdDuration by DetectionState.holdConfirmationDurationMsFlow.collectAsStateWithLifecycle()
+
+            // Test Motor Tap at dynamic coordinates
             OutlinedButton(
                 onClick = {
-                    val context = androidx.compose.ui.platform.AndroidUiDispatcher.CurrentThread // or LocalContext
                     val dispatched = NeuralAccessibilityService.dispatchTap(
                         DetectionState.TAP_X,
                         DetectionState.TAP_Y
@@ -1365,7 +1672,7 @@ fun SimulationCard(
                 border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF38BDF8))
             ) {
                 Text(
-                    "⚡ TEST PHẢN XẠ MOTOR TAP (597, 497)",
+                    "⚡ TEST PHẢN XẠ MOTOR TAP (${tapX.toInt()}, ${tapY.toInt()})",
                     color = Color(0xFF38BDF8),
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp
@@ -1383,7 +1690,7 @@ fun SimulationCard(
                         // Baseline
                         onSimulateStatus(DetectionResult.SCANNING, 80, 80, 80, 0, 0, 0, "Calibrating baseline")
                         kotlinx.coroutines.delay(40L)
-                        // Fly / Dust flickers red for only 150ms (< 500-800ms)
+                        // Fly / Dust flickers red for only 150ms (< hold duration)
                         onSimulateStatus(DetectionResult.RED, 230, 20, 20, 160, 0, 10, "Ruồi bay nháy đỏ 150ms")
                         kotlinx.coroutines.delay(150L)
                         // Target lost, reverts to scanning!
@@ -1404,7 +1711,7 @@ fun SimulationCard(
                 )
             }
 
-            // Test Sustained Hold (650ms) -> Must be confirmed and trigger TAP!
+            // Test Sustained Hold -> Must be confirmed and trigger TAP!
             OutlinedButton(
                 onClick = {
                     onShowOverlay()
@@ -1413,9 +1720,10 @@ fun SimulationCard(
                         // Baseline
                         onSimulateStatus(DetectionResult.SCANNING, 80, 80, 80, 0, 0, 0, "Calibrating baseline")
                         kotlinx.coroutines.delay(40L)
-                        // Continuous steady RED for 650ms
+                        // Continuous steady RED until holdDuration + 50ms
+                        val targetMs = (holdDuration + 50L).coerceAtLeast(100L)
                         val start = System.currentTimeMillis()
-                        while (System.currentTimeMillis() - start <= 650L) {
+                        while (System.currentTimeMillis() - start <= targetMs) {
                             val elapsed = System.currentTimeMillis() - start
                             onSimulateStatus(DetectionResult.RED, 235, 15, 15, 190, 0, 12, "Giữ tâm đỏ ổn định ($elapsed ms)")
                             kotlinx.coroutines.delay(35L)
@@ -1431,7 +1739,7 @@ fun SimulationCard(
                 border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF10B981))
             ) {
                 Text(
-                    if (isSimulatingHold) "⏳ ĐANG GIỮ TÂM ĐỎ..." else "🎯 TEST GIỮ TÂM ĐỎ CHUẨN (650ms) -> KÍCH HOẠT TAP",
+                    if (isSimulatingHold) "⏳ ĐANG GIỮ TÂM ĐỎ..." else "🎯 TEST GIỮ TÂM ĐỎ CHUẨN (${holdDuration}ms) -> KÍCH HOẠT TAP",
                     color = Color(0xFF34D399),
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp
