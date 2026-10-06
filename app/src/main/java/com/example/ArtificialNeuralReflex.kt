@@ -41,7 +41,11 @@ data class NeuralStatusData(
     val holdElapsedMs: Long = 0L,
     val holdTargetMs: Long = 600L,
     val noiseRejectionCount: Long = 0L,
-    val isHoldVerificationActive: Boolean = true
+    val isHoldVerificationActive: Boolean = true,
+    val isAutoHolding: Boolean = false,
+    val isAutoHoldingActive: Boolean = false,
+    val horizontalDragDirection: String = "NONE",
+    val horizontalDragDistanceX: Float = 0f
 )
 
 /**

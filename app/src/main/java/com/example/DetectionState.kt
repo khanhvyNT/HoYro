@@ -34,7 +34,11 @@ data class DetectionMetrics(
     val fps: Int = 0,
     val frameCount: Long = 0L,
     val lastUpdateTimeMs: Long = 0L,
-    val triggerReason: String = "Idle"
+    val triggerReason: String = "Idle",
+    val isAutoHolding: Boolean = false,
+    val isAutoHoldingActive: Boolean = false,
+    val horizontalDragDirection: String = "NONE",
+    val horizontalDragDistanceX: Float = 0f
 )
 
 /**
@@ -49,6 +53,12 @@ object DetectionState {
     const val DEFAULT_TARGET_X = 801
     const val DEFAULT_TARGET_Y = 359
     const val DEFAULT_HOLD_DURATION_MS = 600L
+
+    // Auto-holding and assistive drag properties
+    var isAutoHolding: Boolean = false
+    var isAutoHoldingActive: Boolean = false
+    var horizontalDragDirection: String = "NONE"
+    var horizontalDragDistanceX: Float = 0f
 
     // Parkinson Motor Assistance: Horizontal scan strip (X = max, Y = 50px) and assisted swipe tracking
     const val DEFAULT_SWIPE_START_X = 1200f
