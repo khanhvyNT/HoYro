@@ -47,7 +47,7 @@ class ScreenCaptureService : Service() {
     private val serviceJob = Job()
     private val serviceScope = CoroutineScope(Dispatchers.Default + serviceJob)
     private var captureLoopJob: Job? = null
-    private val neuralReflex = ArtificialNeuralReflex()
+    private val neuralReflex: ArtificialNeuralReflex get() = DetectionState.neuralReflex
 
     companion object {
         const val CHANNEL_ID = "screen_capture_channel"

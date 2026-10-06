@@ -303,7 +303,13 @@ class OverlayService : Service() {
     private fun observeDetectionState() {
         mainScope.launch {
             DetectionState.metrics.collectLatest { metrics ->
-                updateOverlayContent(metrics)
+                updateOverlayContent(metrics, DetectionState.neuralStatus.value)
+            }
+        }
+
+        mainScope.launch {
+            DetectionState.neuralStatus.collectLatest { neural ->
+                updateOverlayContent(DetectionState.metrics.value, neural)
             }
         }
 
@@ -314,19 +320,29 @@ class OverlayService : Service() {
         }
     }
 
-    private fun updateOverlayContent(metrics: DetectionMetrics) {
+    private fun updateOverlayContent(metrics: DetectionMetrics, neural: NeuralStatusData) {
         val tv = statusTextView ?: return
         val dot = statusDot ?: return
 
         when (metrics.result) {
             DetectionResult.RED -> {
-                tv.text = "STATUS: RED"
-                tv.setTextColor(Color.RED)
-                (dot.background as? GradientDrawable)?.setColor(Color.RED)
-                (overlayView?.background as? GradientDrawable)?.setStroke(
-                    (resources.displayMetrics.density * 2).toInt(),
-                    0xAAFF3B30.toInt()
-                )
+                if (neural.currentState == NeuralState.HOLDING) {
+                    tv.text = String.format("STATUS: HOLDING RED (%dms)", neural.holdElapsedMs)
+                    tv.setTextColor(0xFFFF9100.toInt()) // Amber-orange while holding
+                    (dot.background as? GradientDrawable)?.setColor(0xFFFF9100.toInt())
+                    (overlayView?.background as? GradientDrawable)?.setStroke(
+                        (resources.displayMetrics.density * 2).toInt(),
+                        0xAAFF9100.toInt()
+                    )
+                } else {
+                    tv.text = "STATUS: RED"
+                    tv.setTextColor(Color.RED)
+                    (dot.background as? GradientDrawable)?.setColor(Color.RED)
+                    (overlayView?.background as? GradientDrawable)?.setStroke(
+                        (resources.displayMetrics.density * 2).toInt(),
+                        0xAAFF3B30.toInt()
+                    )
+                }
             }
             DetectionResult.GREEN -> {
                 tv.text = "STATUS: GREEN"

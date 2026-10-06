@@ -58,6 +58,23 @@ object DetectionState {
     var centerPriorityEnabled: Boolean = true // Always prioritize center core over background
     var sensitivityThreshold: Float = 1.0f // Sensitivity multiplier
 
+    // Temporal verification / Anti-fly noise filter (500ms - 800ms hold requirement)
+    private val _isHoldVerificationEnabled = MutableStateFlow(true)
+    val isHoldVerificationEnabledFlow: StateFlow<Boolean> = _isHoldVerificationEnabled.asStateFlow()
+    var isHoldVerificationEnabled: Boolean
+        get() = _isHoldVerificationEnabled.value
+        set(value) {
+            _isHoldVerificationEnabled.value = value
+        }
+
+    private val _holdConfirmationDurationMs = MutableStateFlow(600L) // Default 600ms (500-800ms range)
+    val holdConfirmationDurationMsFlow: StateFlow<Long> = _holdConfirmationDurationMs.asStateFlow()
+    var holdConfirmationDurationMs: Long
+        get() = _holdConfirmationDurationMs.value
+        set(value) {
+            _holdConfirmationDurationMs.value = value.coerceIn(500L, 800L)
+        }
+
     // Neural reflex motor response enable flag & reactive StateFlow
     private val _isMotorReflexEnabled = MutableStateFlow(true)
     val isMotorReflexEnabledFlow: StateFlow<Boolean> = _isMotorReflexEnabled.asStateFlow()
@@ -73,6 +90,8 @@ object DetectionState {
         _isMotorReflexEnabled.value = next
         return next
     }
+
+    val neuralReflex = ArtificialNeuralReflex()
 
     private val _isServiceRunning = MutableStateFlow(false)
     val isServiceRunning: StateFlow<Boolean> = _isServiceRunning.asStateFlow()
@@ -96,6 +115,7 @@ object DetectionState {
     }
 
     fun reset() {
+        neuralReflex.reset()
         _metrics.value = DetectionMetrics()
         _neuralStatus.value = NeuralStatusData()
     }

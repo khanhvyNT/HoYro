@@ -63,7 +63,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -336,6 +338,7 @@ fun ColorDetectorApp() {
                 onShowOverlay = { OverlayService.start(context) },
                 onHideOverlay = { OverlayService.stop(context) },
                 onSimulateStatus = { status, r, g, b, redP, greenP, innerRed, reason ->
+                    val now = System.currentTimeMillis()
                     DetectionState.updateMetrics(
                         DetectionMetrics(
                             result = status,
@@ -351,10 +354,21 @@ fun ColorDetectorApp() {
                             greenScore = if (status == DetectionResult.GREEN) 45f else 0f,
                             fps = 33,
                             frameCount = 120,
-                            lastUpdateTimeMs = System.currentTimeMillis(),
+                            lastUpdateTimeMs = now,
                             triggerReason = reason
                         )
                     )
+                    val decision = DetectionState.neuralReflex.process(status, now)
+                    if (decision == ReflexDecision.REFLEX_TAP && DetectionState.isMotorReflexEnabled) {
+                        NeuralAccessibilityService.dispatchTap(
+                            x = DetectionState.TAP_X,
+                            y = DetectionState.TAP_Y,
+                            detectionTimestamp = now,
+                            onLatencyMeasured = { latencyMs ->
+                                DetectionState.neuralReflex.recordLatency(latencyMs)
+                            }
+                        )
+                    }
                 }
             )
         }
@@ -931,6 +945,153 @@ fun PatientNeuralStatusCard(
                     }
                 )
             }
+
+            // Real-time Sustained Hold Status (If currently verifying)
+            if (neuralStatus.currentState == NeuralState.HOLDING) {
+                Surface(
+                    color = Color(0xFFD97706).copy(alpha = 0.25f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "⏳ ĐANG XÁC THỰC GIỮ ĐỎ:",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFFBBF24)
+                        )
+                        Text(
+                            text = "${neuralStatus.holdElapsedMs}ms / ${neuralStatus.holdTargetMs}ms",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Black,
+                            fontFamily = FontFamily.Monospace,
+                            color = Color.White
+                        )
+                    }
+                }
+            }
+
+            // Noise Rejections Counter (Ruồi bay / Hạt bụi)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFF1E293B),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "BỘ LỌC CHỐNG NHIỄU RUỒI BAY & HẠT BỤI",
+                            fontSize = 10.sp,
+                            color = Color(0xFF94A3B8),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Tự động hủy kích hoạt nếu đỏ biến mất trước 500-800ms",
+                            fontSize = 10.sp,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                    Text(
+                        text = "${neuralStatus.noiseRejectionCount} ĐÃ CHẶN",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFF10B981)
+                    )
+                }
+            }
+
+            // Switch: Enable Sustained Hold Filter
+            val isHoldEnabled by DetectionState.isHoldVerificationEnabledFlow.collectAsStateWithLifecycle()
+            val holdDuration by DetectionState.holdConfirmationDurationMsFlow.collectAsStateWithLifecycle()
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Bộ lọc giữ nhắm ổn định (Hold Filter)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Phải giữ liên tục ở tầm đỏ 500-800ms trước khi phản xạ",
+                        fontSize = 10.sp,
+                        color = Color(0xFF94A3B8)
+                    )
+                }
+                Switch(
+                    checked = isHoldEnabled,
+                    onCheckedChange = { checked ->
+                        DetectionState.isHoldVerificationEnabled = checked
+                    }
+                )
+            }
+
+            // Hold Duration Presets: 500ms, 600ms, 700ms, 800ms
+            if (isHoldEnabled) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Thời gian giữ xác nhận tối thiểu:",
+                            fontSize = 11.sp,
+                            color = Color(0xFFCBD5E1)
+                        )
+                        Text(
+                            text = "$holdDuration ms",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF38BDF8),
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(500L, 600L, 700L, 800L).forEach { ms ->
+                            val isSelected = (holdDuration == ms)
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable { DetectionState.holdConfirmationDurationMs = ms },
+                                color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
+                                shape = RoundedCornerShape(6.dp),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isSelected) Color(0xFF38BDF8) else Color(0xFF334155)
+                                )
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 6.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "${ms}ms",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) Color.White else Color(0xFF94A3B8)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1206,6 +1367,72 @@ fun SimulationCard(
                 Text(
                     "⚡ TEST PHẢN XẠ MOTOR TAP (597, 497)",
                     color = Color(0xFF38BDF8),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
+
+            val scope = rememberCoroutineScope()
+            var isSimulatingHold by remember { mutableStateOf(false) }
+
+            // Test Fly / Transient Flicker (150ms) -> Must be rejected (0 TAP)
+            OutlinedButton(
+                onClick = {
+                    onShowOverlay()
+                    scope.launch {
+                        // Baseline
+                        onSimulateStatus(DetectionResult.SCANNING, 80, 80, 80, 0, 0, 0, "Calibrating baseline")
+                        kotlinx.coroutines.delay(40L)
+                        // Fly / Dust flickers red for only 150ms (< 500-800ms)
+                        onSimulateStatus(DetectionResult.RED, 230, 20, 20, 160, 0, 10, "Ruồi bay nháy đỏ 150ms")
+                        kotlinx.coroutines.delay(150L)
+                        // Target lost, reverts to scanning!
+                        onSimulateStatus(DetectionResult.SCANNING, 80, 80, 80, 0, 0, 0, "Ruồi bay mất -> Hủy bỏ reflex (0 TAP)")
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color(0xFFEAB308).copy(alpha = 0.12f)
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFEAB308))
+            ) {
+                Text(
+                    "🪰 TEST RUỒI BAY NHÁY ĐỎ (150ms) -> CHẶN, 0 TAP",
+                    color = Color(0xFFFBBF24),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
+
+            // Test Sustained Hold (650ms) -> Must be confirmed and trigger TAP!
+            OutlinedButton(
+                onClick = {
+                    onShowOverlay()
+                    scope.launch {
+                        isSimulatingHold = true
+                        // Baseline
+                        onSimulateStatus(DetectionResult.SCANNING, 80, 80, 80, 0, 0, 0, "Calibrating baseline")
+                        kotlinx.coroutines.delay(40L)
+                        // Continuous steady RED for 650ms
+                        val start = System.currentTimeMillis()
+                        while (System.currentTimeMillis() - start <= 650L) {
+                            val elapsed = System.currentTimeMillis() - start
+                            onSimulateStatus(DetectionResult.RED, 235, 15, 15, 190, 0, 12, "Giữ tâm đỏ ổn định ($elapsed ms)")
+                            kotlinx.coroutines.delay(35L)
+                        }
+                        isSimulatingHold = false
+                    }
+                },
+                enabled = !isSimulatingHold,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color(0xFF10B981).copy(alpha = 0.12f)
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF10B981))
+            ) {
+                Text(
+                    if (isSimulatingHold) "⏳ ĐANG GIỮ TÂM ĐỎ..." else "🎯 TEST GIỮ TÂM ĐỎ CHUẨN (650ms) -> KÍCH HOẠT TAP",
+                    color = Color(0xFF34D399),
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp
                 )
