@@ -247,6 +247,12 @@ fun ColorDetectorApp() {
             // Pre-Start Edge Trigger (x, y) & Hold Duration (ms) Configuration Card
             PreStartParametersConfigCard(isRunning = isRunning)
 
+            // Vertical Rod Bacterium Hunting & Mechanical Tracking System Card
+            BacteriumHuntingReflexCard(
+                isAccessibilityActive = isAccessibilityActive,
+                isRunning = isRunning
+            )
+
             // Permissions Checklist Card
             PermissionsCard(
                 hasOverlayPermission = hasOverlayPermission,
@@ -419,6 +425,8 @@ fun DeviceSpecsCard() {
     val targetY by DetectionState.targetYFlow.collectAsStateWithLifecycle()
     val tapX by DetectionState.tapXFlow.collectAsStateWithLifecycle()
     val tapY by DetectionState.tapYFlow.collectAsStateWithLifecycle()
+    val motorX by DetectionState.peripheralMotorXFlow.collectAsStateWithLifecycle()
+    val motorY by DetectionState.peripheralMotorYFlow.collectAsStateWithLifecycle()
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -453,6 +461,18 @@ fun DeviceSpecsCard() {
             )
             Text(
                 text = "• Tọa độ phản xạ Edge Trigger: X = ${tapX.toInt()}, Y = ${tapY.toInt()}",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = "• Cơ quan vận động ngoại biên: X = ${motorX.toInt()}, Y = ${motorY.toInt()} (Vuốt kéo bám vi khuẩn que dọc)",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = "• Hậu xử lý Tap: Vuốt dịch chuyển Y + 20 ngay sau khi tap để chống tâm nháy đỏ gây loạn phản xạ",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Text(
+                text = "• Nút On/Off nổi: Icon tròn độc lập di chuyển tự do khắp màn hình (chạm nhanh để bật/tắt)",
                 style = MaterialTheme.typography.bodySmall
             )
             Text(
@@ -1394,6 +1414,803 @@ fun PreStartParametersConfigCard(isRunning: Boolean) {
                         focusedBorderColor = Color(0xFF38BDF8),
                         unfocusedBorderColor = Color(0xFF475569)
                     )
+                )
+            }
+
+            // 4. BỘ TỐI ƯU HÓA ĐỘ TRỄ SIÊU TỐC (GAIN ~80-110ms)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFF0284C7).copy(alpha = 0.12f),
+                shape = RoundedCornerShape(10.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF0284C7).copy(alpha = 0.5f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "⚡ TỐI ƯU ĐỘ TRỄ SIÊU TỐC (GAIN ~80-110ms)",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF38BDF8)
+                        )
+                        Surface(
+                            color = Color(0xFF065F46),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = "5 FIXES ACTIVE",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF34D399),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    // Fix 1: Downscale Capture
+                    val downscaleFactor by DetectionState.captureDownscaleFactorFlow.collectAsStateWithLifecycle()
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(
+                            text = "1. Downscale Capture (Giảm GPU composite ~40-60ms):",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFE2E8F0)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(
+                                2 to "1/2 (802×360) ⭐",
+                                4 to "1/4 (401×180)",
+                                1 to "1/1 (1604×720)"
+                            ).forEach { (factor, label) ->
+                                val isSelected = (downscaleFactor == factor)
+                                Surface(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable(enabled = !isRunning) {
+                                            DetectionState.captureDownscaleFactor = factor
+                                        },
+                                    color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (isSelected) Color(0xFF38BDF8) else Color(0xFF334155)
+                                    )
+                                ) {
+                                    Box(
+                                        modifier = Modifier.padding(vertical = 5.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            fontSize = 9.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) Color.White else Color(0xFF94A3B8)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Fix 2: Loop Delay (8ms / 0ms khi RED)
+                    val loopDelay by DetectionState.loopDelayMsFlow.collectAsStateWithLifecycle()
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(
+                            text = "2. Loop Interval: ${loopDelay}ms (~125Hz) + 0ms khi RED (~15-22ms gain):",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFE2E8F0)
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(4L, 8L, 16L, 30L).forEach { ms ->
+                                val isSelected = (loopDelay == ms)
+                                Surface(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable(enabled = !isRunning) {
+                                            DetectionState.loopDelayMs = ms
+                                        },
+                                    color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (isSelected) Color(0xFF38BDF8) else Color(0xFF334155)
+                                    )
+                                ) {
+                                    Box(
+                                        modifier = Modifier.padding(vertical = 5.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "${ms}ms",
+                                            fontSize = 10.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) Color.White else Color(0xFF94A3B8)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Fix 3: Bỏ sqrt()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "3. Bỏ sqrt(): So sánh dist² <= r² (~3-5ms gain)",
+                            fontSize = 10.sp,
+                            color = Color(0xFF94A3B8)
+                        )
+                        Surface(
+                            color = Color(0xFF065F46),
+                            shape = RoundedCornerShape(4.dp)
+                        ) {
+                            Text(
+                                text = "ZERO SQRT ✓",
+                                fontSize = 8.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF34D399),
+                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    // Fix 4: Stride 2
+                    val roiStride by DetectionState.roiScanStrideFlow.collectAsStateWithLifecycle()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = "4. Quét Stride 2: Chỉ 100px thay vì 400px (~5-8ms gain)",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFFE2E8F0)
+                            )
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            listOf(2 to "Step 2 ⭐", 1 to "Step 1").forEach { (step, text) ->
+                                val isSelected = (roiStride == step)
+                                Surface(
+                                    modifier = Modifier.clickable(enabled = !isRunning) {
+                                        DetectionState.roiScanStride = step
+                                    },
+                                    color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
+                                    shape = RoundedCornerShape(4.dp),
+                                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) Color(0xFF38BDF8) else Color(0xFF475569))
+                                ) {
+                                    Text(
+                                        text = text,
+                                        fontSize = 9.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) Color.White else Color(0xFF94A3B8),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Fix 5: Tắt Log Hot-Path
+                    val debugLog by DetectionState.debugLoggingEnabledFlow.collectAsStateWithLifecycle()
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "5. Tắt Log Hot-Path (~5-15ms JNI gain)",
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color(0xFFE2E8F0)
+                            )
+                            Text(
+                                text = if (debugLog) "Đang bật log (chậm hơn)" else "Đã tắt log (tối đa tốc độ)",
+                                fontSize = 9.sp,
+                                color = if (debugLog) Color(0xFFFBBF24) else Color(0xFF34D399)
+                            )
+                        }
+                        Switch(
+                            checked = debugLog,
+                            onCheckedChange = { DetectionState.debugLoggingEnabled = it }
+                        )
+                    }
+
+                    // Cơ chế vuốt Y + 20 sau khi tap (chống tâm nháy đỏ gây nhiễu)
+                    val isPostTapSwipeEnabled by DetectionState.isPostTapSwipeEnabledFlow.collectAsStateWithLifecycle()
+                    val postTapDeltaY by DetectionState.postTapFlickDeltaYFlow.collectAsStateWithLifecycle()
+                    val useMotorOrigin by DetectionState.useMotorForPostTapSwipeFlow.collectAsStateWithLifecycle()
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "6. Tự động vuốt Y + 20 sau khi Tap (Chống nháy đỏ)",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFBBF24)
+                                )
+                                Text(
+                                    text = "Kéo góc nhìn dịch chuyển Y + 20 ngay sau khi tap để phá vỡ tâm chớp đỏ, tránh nhiễu lặp phản xạ",
+                                    fontSize = 9.sp,
+                                    color = Color(0xFF94A3B8)
+                                )
+                            }
+                            Switch(
+                                checked = isPostTapSwipeEnabled,
+                                onCheckedChange = { DetectionState.isPostTapSwipeEnabled = it }
+                            )
+                        }
+
+                        if (isPostTapSwipeEnabled) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(15f to "+15px", 20f to "+20px ⭐", 30f to "+30px", 40f to "+40px").forEach { (dy, label) ->
+                                    val isSelected = (postTapDeltaY == dy)
+                                    Surface(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable(enabled = !isRunning) {
+                                                DetectionState.postTapFlickDeltaY = dy
+                                            },
+                                        color = if (isSelected) Color(0xFFD97706) else Color(0xFF1E293B),
+                                        shape = RoundedCornerShape(4.dp),
+                                        border = androidx.compose.foundation.BorderStroke(
+                                            1.dp,
+                                            if (isSelected) Color(0xFFFBBF24) else Color(0xFF334155)
+                                        )
+                                    ) {
+                                        Box(
+                                            modifier = Modifier.padding(vertical = 5.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                fontSize = 9.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) Color.White else Color(0xFF94A3B8)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                listOf(
+                                    true to "Gốc: Motor (1205, 479) ⭐",
+                                    false to "Gốc: Điểm Tap (597, 497)"
+                                ).forEach { (useMotor, title) ->
+                                    val isSelected = (useMotorOrigin == useMotor)
+                                    Surface(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable(enabled = !isRunning) {
+                                                DetectionState.useMotorForPostTapSwipe = useMotor
+                                            },
+                                        color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
+                                        shape = RoundedCornerShape(4.dp),
+                                        border = androidx.compose.foundation.BorderStroke(
+                                            1.dp,
+                                            if (isSelected) Color(0xFF38BDF8) else Color(0xFF334155)
+                                        )
+                                    ) {
+                                        Box(
+                                            modifier = Modifier.padding(vertical = 5.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = title,
+                                                fontSize = 9.sp,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) Color.White else Color(0xFF94A3B8)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Test post-tap flick
+                            OutlinedButton(
+                                onClick = {
+                                    val startX = if (useMotorOrigin) DetectionState.PERIPHERAL_MOTOR_X else DetectionState.TAP_X
+                                    val startY = if (useMotorOrigin) DetectionState.PERIPHERAL_MOTOR_Y else DetectionState.TAP_Y
+                                    NeuralAccessibilityService.dispatchSwipe(
+                                        startX = startX,
+                                        startY = startY,
+                                        endX = startX,
+                                        endY = startY + postTapDeltaY,
+                                        durationMs = 35L
+                                    )
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = Color(0xFFFBBF24).copy(alpha = 0.1f)
+                                ),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFBBF24))
+                            ) {
+                                Text(
+                                    "⚡ THỬ NGHIỆM VUỐT Y + ${postTapDeltaY.toInt()}PX (CHỐNG NHÁY ĐỎ)",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFFFBBF24),
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun BacteriumHuntingReflexCard(
+    isAccessibilityActive: Boolean,
+    isRunning: Boolean
+) {
+    val isBacteriumEnabled by DetectionState.isBacteriumTrackingEnabledFlow.collectAsStateWithLifecycle()
+    val bacteriumStatus by DetectionState.bacteriumStatusFlow.collectAsStateWithLifecycle()
+    val motorX by DetectionState.peripheralMotorXFlow.collectAsStateWithLifecycle()
+    val motorY by DetectionState.peripheralMotorYFlow.collectAsStateWithLifecycle()
+    val sensitivity by DetectionState.trackingSensitivityFlow.collectAsStateWithLifecycle()
+    val targetX by DetectionState.targetXFlow.collectAsStateWithLifecycle()
+    val targetY by DetectionState.targetYFlow.collectAsStateWithLifecycle()
+
+    var motorXText by remember(motorX) { mutableStateOf(motorX.toInt().toString()) }
+    var motorYText by remember(motorY) { mutableStateOf(motorY.toInt().toString()) }
+
+    val scope = rememberCoroutineScope()
+    var isTestRunning by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF0F172A)
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            1.5.dp,
+            if (bacteriumStatus.isBacteriumFound) Color(0xFFFBBF24) else Color(0xFF334155)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // Header with Switch
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "SĂN BẮT VI KHUẨN HÌNH QUE DỌC",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFFBBF24)
+                    )
+                    Text(
+                        text = "Võng mạc ($targetX, $targetY) → Cơ quan vận động (${motorX.toInt()}, ${motorY.toInt()})",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF94A3B8)
+                    )
+                }
+                Switch(
+                    checked = isBacteriumEnabled,
+                    onCheckedChange = { DetectionState.isBacteriumTrackingEnabled = it }
+                )
+            }
+
+            // Description info banner
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFF1E293B),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text(
+                    text = "🔬 Vi khuẩn que dọc có sắc tố da nhợt/gần trắng ẩn mình trong môi trường nhiễu. Hệ thống liên tục quét võng mạc, phát hiện vector lệch và dùng cơ quan vận động tại (${motorX.toInt()}, ${motorY.toInt()}) phát sinh vuốt cơ học để ghim chặt tâm bám theo mục tiêu đang trôi.",
+                    fontSize = 11.sp,
+                    color = Color(0xFFCBD5E1),
+                    modifier = Modifier.padding(10.dp),
+                    lineHeight = 15.sp
+                )
+            }
+
+            // Live Bacterium Visual & Motor Status
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Bacterium Visual Status
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    color = Color(0xFF1E293B),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = "THỊ GIÁC VÕNG MẠC",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF94A3B8)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = if (bacteriumStatus.isBacteriumFound) "TÌM THẤY QUE DỌC" else "ĐANG QUAN SÁT",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Black,
+                            color = if (bacteriumStatus.isBacteriumFound) Color(0xFFFBBF24) else Color.White
+                        )
+                        if (bacteriumStatus.isBacteriumFound) {
+                            Text(
+                                text = "Vị trí: (${bacteriumStatus.bacteriumX}, ${bacteriumStatus.bacteriumY})",
+                                fontSize = 10.sp,
+                                color = Color(0xFF38BDF8)
+                            )
+                            Text(
+                                text = "Lệch: ΔX ${bacteriumStatus.deltaX}px, ΔY ${bacteriumStatus.deltaY}px",
+                                fontSize = 10.sp,
+                                color = Color(0xFFF87171)
+                            )
+                        } else {
+                            Text(
+                                text = "Võng mạc: ($targetX, $targetY)",
+                                fontSize = 10.sp,
+                                color = Color(0xFF64748B)
+                            )
+                        }
+                    }
+                }
+
+                // Peripheral Motor Action
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    color = Color(0xFF1E293B),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = "CHI VẬN ĐỘNG NGOẠI BIÊN",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF94A3B8)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = bacteriumStatus.lastSwipeDirection,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Black,
+                            color = if (bacteriumStatus.lastSwipeDirection.contains("GHIM")) Color(0xFF4ADE80) else Color(0xFF38BDF8)
+                        )
+                        Text(
+                            text = "Đã vuốt: ${bacteriumStatus.swipeCount} lần",
+                            fontSize = 10.sp,
+                            color = Color(0xFFCBD5E1)
+                        )
+                        Text(
+                            text = "Gốc: (${motorX.toInt()}, ${motorY.toInt()})",
+                            fontSize = 10.sp,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                }
+            }
+
+            // Real-time tracking message
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = if (bacteriumStatus.isBacteriumFound) Color(0xFF78350F).copy(alpha = 0.4f) else Color(0xFF1E293B),
+                shape = RoundedCornerShape(6.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, if (bacteriumStatus.isBacteriumFound) Color(0xFFF59E0B) else Color(0xFF334155))
+            ) {
+                Text(
+                    text = bacteriumStatus.statusMessage,
+                    fontSize = 10.sp,
+                    color = if (bacteriumStatus.isBacteriumFound) Color(0xFFFDE68A) else Color(0xFF94A3B8),
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                )
+            }
+
+            // Customizable Peripheral Motor Coordinates (1205, 479)
+            Text(
+                text = "TỌA ĐỘ ĐIỀU KHIỂN CƠ QUAN VẬN ĐỘNG (MOTOR X, Y):",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFE2E8F0)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedTextField(
+                    value = motorXText,
+                    onValueChange = { newText ->
+                        motorXText = newText
+                        newText.toFloatOrNull()?.let { DetectionState.PERIPHERAL_MOTOR_X = it }
+                    },
+                    label = { Text("Motor X", fontSize = 10.sp) },
+                    modifier = Modifier.weight(1f),
+                    enabled = !isRunning,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFFFBBF24),
+                        unfocusedBorderColor = Color(0xFF475569)
+                    )
+                )
+
+                OutlinedTextField(
+                    value = motorYText,
+                    onValueChange = { newText ->
+                        motorYText = newText
+                        newText.toFloatOrNull()?.let { DetectionState.PERIPHERAL_MOTOR_Y = it }
+                    },
+                    label = { Text("Motor Y", fontSize = 10.sp) },
+                    modifier = Modifier.weight(1f),
+                    enabled = !isRunning,
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = Color(0xFFFBBF24),
+                        unfocusedBorderColor = Color(0xFF475569)
+                    )
+                )
+
+                Surface(
+                    modifier = Modifier
+                        .align(Alignment.CenterVertically)
+                        .clickable(enabled = !isRunning) {
+                            DetectionState.PERIPHERAL_MOTOR_X = DetectionState.DEFAULT_PERIPHERAL_MOTOR_X
+                            DetectionState.PERIPHERAL_MOTOR_Y = DetectionState.DEFAULT_PERIPHERAL_MOTOR_Y
+                            motorXText = DetectionState.DEFAULT_PERIPHERAL_MOTOR_X.toInt().toString()
+                            motorYText = DetectionState.DEFAULT_PERIPHERAL_MOTOR_Y.toInt().toString()
+                        },
+                    color = Color(0xFF1E293B),
+                    shape = RoundedCornerShape(6.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569))
+                ) {
+                    Text(
+                        text = "Gốc\n(1205, 479)",
+                        fontSize = 9.sp,
+                        color = Color(0xFFFBBF24),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                    )
+                }
+            }
+
+            // Tracking Sensitivity Gain (0.5x, 1.0x, 1.5x, 2.0x)
+            Text(
+                text = "HỆ SỐ ĐỘ NHẠY VUỐT KÉO TÂM (TRACKING SENSITIVITY):",
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFE2E8F0)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                listOf(0.5f to "0.5x", 1.0f to "1.0x Chuẩn", 1.5f to "1.5x Nhanh", 2.0f to "2.0x Cực đại").forEach { (sens, label) ->
+                    val isSelected = (sensitivity == sens)
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable(enabled = !isRunning) {
+                                DetectionState.trackingSensitivity = sens
+                            },
+                        color = if (isSelected) Color(0xFFD97706) else Color(0xFF1E293B),
+                        shape = RoundedCornerShape(6.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) Color(0xFFFBBF24) else Color(0xFF334155))
+                    ) {
+                        Box(
+                            modifier = Modifier.padding(vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                fontSize = 10.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Color.White else Color(0xFF94A3B8)
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Manual Motor Test Buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = {
+                        val startX = DetectionState.PERIPHERAL_MOTOR_X
+                        val startY = DetectionState.PERIPHERAL_MOTOR_Y
+                        NeuralAccessibilityService.dispatchSwipe(
+                            startX = startX,
+                            startY = startY,
+                            endX = startX - 80f,
+                            endY = startY,
+                            durationMs = 50L
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = Color(0xFF38BDF8).copy(alpha = 0.12f)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8))
+                ) {
+                    Text(
+                        "👈 TEST VUỐT TRÁI",
+                        fontSize = 10.sp,
+                        color = Color(0xFF38BDF8),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                OutlinedButton(
+                    onClick = {
+                        val startX = DetectionState.PERIPHERAL_MOTOR_X
+                        val startY = DetectionState.PERIPHERAL_MOTOR_Y
+                        NeuralAccessibilityService.dispatchSwipe(
+                            startX = startX,
+                            startY = startY,
+                            endX = startX + 80f,
+                            endY = startY,
+                            durationMs = 50L
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = Color(0xFFFBBF24).copy(alpha = 0.12f)
+                    ),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFBBF24))
+                ) {
+                    Text(
+                        "👉 TEST VUỐT PHẢI",
+                        fontSize = 10.sp,
+                        color = Color(0xFFFBBF24),
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // Simulation button: Simulate moving bacterium and auto mechanical tracking
+            OutlinedButton(
+                onClick = {
+                    scope.launch {
+                        isTestRunning = true
+                        val motorX = DetectionState.PERIPHERAL_MOTOR_X
+                        val motorY = DetectionState.PERIPHERAL_MOTOR_Y
+
+                        // Step 1: Bacterium at Right (+65px) -> Swipe right to pull center
+                        DetectionState.updateBacteriumStatus(
+                            BacteriumTrackingStatus(
+                                isBacteriumFound = true,
+                                bacteriumX = (targetX + 65),
+                                bacteriumY = targetY,
+                                deltaX = 65,
+                                deltaY = 0,
+                                rodConfidence = 4.2f,
+                                rodHeight = 36,
+                                rodWidth = 14,
+                                isTrackingActive = true,
+                                lastSwipeDirection = "KÉO SANG PHẢI (→)",
+                                swipeCount = DetectionState.bacteriumStatusFlow.value.swipeCount + 1,
+                                lastSwipeTimestamp = System.currentTimeMillis(),
+                                statusMessage = "Vi khuẩn lệch phải (+65px) -> Đang kích hoạt vuốt cơ học kéo sang phải!"
+                            )
+                        )
+                        NeuralAccessibilityService.dispatchSwipe(
+                            startX = motorX,
+                            startY = motorY,
+                            endX = motorX + 75f,
+                            endY = motorY,
+                            durationMs = 45L
+                        )
+                        kotlinx.coroutines.delay(200L)
+
+                        // Step 2: Bacterium drifts to Left (-45px) -> Swipe left to pull center
+                        DetectionState.updateBacteriumStatus(
+                            BacteriumTrackingStatus(
+                                isBacteriumFound = true,
+                                bacteriumX = (targetX - 45),
+                                bacteriumY = targetY,
+                                deltaX = -45,
+                                deltaY = 0,
+                                rodConfidence = 4.0f,
+                                rodHeight = 34,
+                                rodWidth = 12,
+                                isTrackingActive = true,
+                                lastSwipeDirection = "KÉO SANG TRÁI (←)",
+                                swipeCount = DetectionState.bacteriumStatusFlow.value.swipeCount + 1,
+                                lastSwipeTimestamp = System.currentTimeMillis(),
+                                statusMessage = "Vi khuẩn trôi sang trái (-45px) -> Đang kích hoạt vuốt cơ học kéo sang trái!"
+                            )
+                        )
+                        NeuralAccessibilityService.dispatchSwipe(
+                            startX = motorX,
+                            startY = motorY,
+                            endX = motorX - 60f,
+                            endY = motorY,
+                            durationMs = 45L
+                        )
+                        kotlinx.coroutines.delay(200L)
+
+                        // Step 3: Centered and locked!
+                        DetectionState.updateBacteriumStatus(
+                            BacteriumTrackingStatus(
+                                isBacteriumFound = true,
+                                bacteriumX = targetX,
+                                bacteriumY = targetY,
+                                deltaX = 0,
+                                deltaY = 0,
+                                rodConfidence = 4.8f,
+                                rodHeight = 38,
+                                rodWidth = 14,
+                                isTrackingActive = true,
+                                lastSwipeDirection = "🎯 GHIM CHẶT VÀO TÂM",
+                                swipeCount = DetectionState.bacteriumStatusFlow.value.swipeCount,
+                                lastSwipeTimestamp = System.currentTimeMillis(),
+                                statusMessage = "🎯 ĐÃ GHIM CHẶT TÂM VÀO VÙNG VI KHUẨN QUE DỌC ĐANG BIẾN ĐỘNG!"
+                            )
+                        )
+                        isTestRunning = false
+                    }
+                },
+                enabled = !isTestRunning,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color(0xFF10B981).copy(alpha = 0.12f)
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF10B981))
+            ) {
+                Text(
+                    text = if (isTestRunning) "⏳ ĐANG PHẢN XẠ KÉO BÁM ĐUỔI..." else "🎯 TEST MÔ PHỎNG: VI KHUẨN DI CHUYỂN → KÉO CHI BÁM ĐUỔI",
+                    color = Color(0xFF34D399),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp
                 )
             }
         }

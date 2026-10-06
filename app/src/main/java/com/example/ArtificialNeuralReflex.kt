@@ -65,6 +65,7 @@ class ArtificialNeuralReflex(
     private val tag = "NEURAL"
 
     private fun logI(message: String) {
+        if (!DetectionState.debugLoggingEnabled) return
         try {
             Log.i(tag, message)
         } catch (_: Throwable) {
@@ -73,6 +74,7 @@ class ArtificialNeuralReflex(
     }
 
     private fun logD(message: String) {
+        if (!DetectionState.debugLoggingEnabled) return
         try {
             Log.d(tag, message)
         } catch (_: Throwable) {
@@ -81,6 +83,7 @@ class ArtificialNeuralReflex(
     }
 
     private fun logV(message: String) {
+        if (!DetectionState.debugLoggingEnabled) return
         try {
             Log.v(tag, message)
         } catch (_: Throwable) {

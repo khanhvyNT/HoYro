@@ -38,8 +38,11 @@ class OverlayService : Service() {
     private var overlayView: View? = null
     private var statusTextView: TextView? = null
     private var statusDot: View? = null
-    private var toggleButton: TextView? = null
     private var closeButton: TextView? = null
+
+    // Draggable circular floating On/Off toggle button
+    private var circularToggleView: View? = null
+    private var circularToggleIcon: TextView? = null
 
     private val serviceJob = Job()
     private val mainScope = CoroutineScope(Dispatchers.Main + serviceJob)
@@ -71,6 +74,7 @@ class OverlayService : Service() {
         super.onCreate()
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
         createFloatingOverlay()
+        createCircularToggleButton()
         observeDetectionState()
     }
 
@@ -136,39 +140,6 @@ class OverlayService : Service() {
         statusTextView = textView
         container.addView(textView)
 
-        // Subtle vertical divider line between status and emergency controls
-        val divider = View(this).apply {
-            layoutParams = LinearLayout.LayoutParams(dp(1f), dp(16f)).apply {
-                marginStart = dp(10f)
-                marginEnd = dp(8f)
-            }
-            setBackgroundColor(0x55FFFFFF)
-        }
-        container.addView(divider)
-
-        // Emergency Toggle Button: ⚡ ON / ⏸ OFF for motor reflex tap
-        val toggleBtn = TextView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                dp(26f)
-            ).apply {
-                marginEnd = dp(6f)
-            }
-            setPadding(dp(8f), dp(3f), dp(8f), dp(3f))
-            gravity = Gravity.CENTER
-            typeface = Typeface.DEFAULT_BOLD
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
-            isClickable = true
-            isFocusable = true
-
-            setOnClickListener {
-                DetectionState.toggleMotorReflex()
-            }
-        }
-        toggleButton = toggleBtn
-        updateToggleButtonUi(DetectionState.isMotorReflexEnabled)
-        container.addView(toggleBtn)
-
         // Emergency Close Button: ✕ to stop detection & overlay immediately
         val closeBtn = TextView(this).apply {
             text = "✕"
@@ -177,7 +148,9 @@ class OverlayService : Service() {
             typeface = Typeface.DEFAULT_BOLD
             gravity = Gravity.CENTER
             val size = dp(24f)
-            layoutParams = LinearLayout.LayoutParams(size, size)
+            layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                marginStart = dp(10f)
+            }
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
                 setColor(0x33FFFFFF)
@@ -217,12 +190,12 @@ class OverlayService : Service() {
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             // Position near bottom center by default, but freely movable anywhere
-            x = (screenWidth / 2) - dp(110f)
-            y = screenHeight - dp(110f)
+            x = (screenWidth / 2) - dp(100f)
+            y = screenHeight - dp(105f)
         }
         layoutParams = params
 
-        // Free 2D Drag handling: Move anywhere on the screen while allowing button clicks
+        // Free 2D Drag handling: Move anywhere on the screen while allowing close button click
         var initialX = 0
         var initialY = 0
         var initialTouchX = 0f
@@ -232,15 +205,10 @@ class OverlayService : Service() {
             val touchX = event.x.toInt()
             val touchY = event.y.toInt()
 
-            // If touch event starts inside the toggle or close buttons, let the button handle the click!
-            val toggleRect = android.graphics.Rect()
-            toggleBtn.getHitRect(toggleRect)
             val closeRect = android.graphics.Rect()
             closeBtn.getHitRect(closeRect)
 
-            if (event.action == MotionEvent.ACTION_DOWN &&
-                (toggleRect.contains(touchX, touchY) || closeRect.contains(touchX, touchY))
-            ) {
+            if (event.action == MotionEvent.ACTION_DOWN && closeRect.contains(touchX, touchY)) {
                 return@setOnTouchListener false
             }
 
@@ -276,26 +244,144 @@ class OverlayService : Service() {
         }
     }
 
-    private fun updateToggleButtonUi(isEnabled: Boolean) {
-        val btn = toggleButton ?: return
+    /**
+     * Nút On/Off độc lập dạng ICON HÌNH TRÒN kích thước vừa phải (48dp).
+     * Có thể kéo thả di chuyển tự do đến bất cứ vị trí nào trên toàn màn hình.
+     * Chạm nhanh để Bật/Tắt phản xạ vận động thần kinh (Motor Reflex).
+     */
+    @SuppressLint("ClickableViewAccessibility")
+    private fun createCircularToggleButton() {
+        if (circularToggleView != null) return
+        val wm = windowManager ?: return
+
+        val displayMetrics = resources.displayMetrics
+        val density = displayMetrics.density
+        fun dp(dp: Float): Int = (dp * density + 0.5f).toInt()
+
+        val buttonSize = dp(48f) // Kích thước vừa phải chuẩn công thái học (48dp)
+
+        val circularContainer = android.widget.FrameLayout(this).apply {
+            layoutParams = android.widget.FrameLayout.LayoutParams(buttonSize, buttonSize)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xEE059669.toInt())
+                setStroke(dp(2.5f), 0xFF34D399.toInt())
+            }
+            elevation = dp(8f).toFloat()
+        }
+
+        val icon = TextView(this).apply {
+            text = "⚡"
+            setTextColor(Color.WHITE)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 20f)
+            typeface = Typeface.DEFAULT_BOLD
+            gravity = Gravity.CENTER
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT
+            )
+            setShadowLayer(8f, 0f, 2f, Color.BLACK)
+        }
+        circularToggleIcon = icon
+        circularContainer.addView(icon)
+
+        val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        } else {
+            @Suppress("DEPRECATION")
+            WindowManager.LayoutParams.TYPE_PHONE
+        }
+
+        val screenWidth = displayMetrics.widthPixels
+        val screenHeight = displayMetrics.heightPixels
+
+        val toggleParams = WindowManager.LayoutParams(
+            buttonSize,
+            buttonSize,
+            layoutType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.START
+            // Vị trí mặc định: cạnh phải màn hình, tầm với ngón tay cái
+            x = screenWidth - buttonSize - dp(18f)
+            y = (screenHeight / 2) - (buttonSize / 2)
+        }
+
+        var initX = 0
+        var initY = 0
+        var startTouchX = 0f
+        var startTouchY = 0f
+        var isDrag = false
+
+        circularContainer.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    initX = toggleParams.x
+                    initY = toggleParams.y
+                    startTouchX = event.rawX
+                    startTouchY = event.rawY
+                    isDrag = false
+                    true
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    val dx = (event.rawX - startTouchX).toInt()
+                    val dy = (event.rawY - startTouchY).toInt()
+                    if (dx * dx + dy * dy > dp(6f) * dp(6f)) {
+                        isDrag = true
+                    }
+                    if (isDrag) {
+                        toggleParams.x = initX + dx
+                        toggleParams.y = initY + dy
+                        try {
+                            wm.updateViewLayout(circularContainer, toggleParams)
+                        } catch (_: Exception) {}
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!isDrag) {
+                        // Click event: Bật / Tắt phản xạ thần kinh vận động
+                        DetectionState.toggleMotorReflex()
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+
+        try {
+            wm.addView(circularContainer, toggleParams)
+            circularToggleView = circularContainer
+            updateCircularButtonUi(DetectionState.isMotorReflexEnabled)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    private fun updateCircularButtonUi(isEnabled: Boolean) {
+        val container = circularToggleView as? android.widget.FrameLayout ?: return
+        val icon = circularToggleIcon ?: return
         val density = resources.displayMetrics.density
         fun dp(dp: Float): Int = (dp * density + 0.5f).toInt()
 
         if (isEnabled) {
-            btn.text = "⚡ ON"
-            btn.setTextColor(0xFF00E676.toInt())
-            btn.background = GradientDrawable().apply {
-                setColor(0xDD1B5E20.toInt())
-                cornerRadius = dp(12f).toFloat()
-                setStroke(dp(1f), 0xFF00E676.toInt())
+            icon.text = "⚡"
+            icon.setTextColor(Color.WHITE)
+            container.background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xEE059669.toInt()) // Vibrant Emerald Green
+                setStroke(dp(2.5f), 0xFF34D399.toInt()) // Glowing ring
             }
         } else {
-            btn.text = "⏸ OFF"
-            btn.setTextColor(0xFFFF5252.toInt())
-            btn.background = GradientDrawable().apply {
-                setColor(0xDD4A1515.toInt())
-                cornerRadius = dp(12f).toFloat()
-                setStroke(dp(1f), 0xFFFF5252.toInt())
+            icon.text = "⏸"
+            icon.setTextColor(0xFFFF5252.toInt())
+            container.background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(0xEE1E293B.toInt()) // Dark Slate
+                setStroke(dp(2f), 0xFFEF4444.toInt()) // Crimson ring
             }
         }
     }
@@ -315,7 +401,17 @@ class OverlayService : Service() {
 
         mainScope.launch {
             DetectionState.isMotorReflexEnabledFlow.collectLatest { isEnabled ->
-                updateToggleButtonUi(isEnabled)
+                updateCircularButtonUi(isEnabled)
+            }
+        }
+
+        mainScope.launch {
+            DetectionState.bacteriumStatusFlow.collectLatest { bac ->
+                if (bac.isBacteriumFound) {
+                    val tv = statusTextView ?: return@collectLatest
+                    tv.text = "QUE DỌC: ${bac.lastSwipeDirection} (ΔX:${bac.deltaX})"
+                    tv.setTextColor(0xFFFBBF24.toInt())
+                }
             }
         }
     }
@@ -375,10 +471,18 @@ class OverlayService : Service() {
                 e.printStackTrace()
             }
         }
+        circularToggleView?.let { view ->
+            try {
+                windowManager?.removeView(view)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
         overlayView = null
+        circularToggleView = null
+        circularToggleIcon = null
         statusTextView = null
         statusDot = null
-        toggleButton = null
         closeButton = null
     }
 }

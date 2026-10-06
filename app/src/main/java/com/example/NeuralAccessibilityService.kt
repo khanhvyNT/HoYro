@@ -44,6 +44,30 @@ class NeuralAccessibilityService : AccessibilityService() {
 
             return service.executeTap(x, y, detectionTimestamp, onLatencyMeasured)
         }
+
+        /**
+         * Dispatches a mechanical swipe gesture from (startX, startY) to (endX, endY)
+         * to mechanically pull the crosshair to track the moving vertical rod bacterium.
+         */
+        fun dispatchSwipe(
+            startX: Float = DetectionState.PERIPHERAL_MOTOR_X,
+            startY: Float = DetectionState.PERIPHERAL_MOTOR_Y,
+            endX: Float,
+            endY: Float,
+            durationMs: Long = 50L,
+            detectionTimestamp: Long = System.currentTimeMillis(),
+            onCompleted: (() -> Unit)? = null
+        ): Boolean {
+            val service = instance
+            if (service == null) {
+                if (DetectionState.debugLoggingEnabled) {
+                    Log.w(TAG, "[NEURAL] AccessibilityService not connected for swipe.")
+                }
+                return false
+            }
+
+            return service.executeSwipe(startX, startY, endX, endY, durationMs, detectionTimestamp, onCompleted)
+        }
     }
 
     override fun onServiceConnected() {
@@ -96,8 +120,10 @@ class NeuralAccessibilityService : AccessibilityService() {
             val dispatchStartTimestamp = System.currentTimeMillis()
             val latencyMs = (dispatchStartTimestamp - detectionTimestamp).coerceAtLeast(0L)
 
-            Log.i(TAG, "[NEURAL] Gesture dispatched at $dispatchStartTimestamp")
-            Log.i(TAG, "[NEURAL] Reflex latency: $latencyMs ms (Target: [X=$x, Y=$y])")
+            if (DetectionState.debugLoggingEnabled) {
+                Log.i(TAG, "[NEURAL] Gesture dispatched at $dispatchStartTimestamp")
+                Log.i(TAG, "[NEURAL] Reflex latency: $latencyMs ms (Target: [X=$x, Y=$y])")
+            }
 
             onLatencyMeasured?.invoke(latencyMs)
 
@@ -106,12 +132,38 @@ class NeuralAccessibilityService : AccessibilityService() {
                 object : GestureResultCallback() {
                     override fun onCompleted(gestureDescription: GestureDescription?) {
                         super.onCompleted(gestureDescription)
-                        Log.d(TAG, "[NEURAL] Tap gesture completed successfully at ($x, $y)")
+                        if (DetectionState.debugLoggingEnabled) {
+                            Log.d(TAG, "[NEURAL] Tap gesture completed successfully at ($x, $y)")
+                        }
+
+                        // Sau khi phát động tap xong: Tự động vuốt Y + 20 để tránh tâm nháy đỏ làm loạn phản xạ do nhiễu
+                        if (DetectionState.isPostTapSwipeEnabled) {
+                            val flickOriginX = if (DetectionState.useMotorForPostTapSwipe) {
+                                DetectionState.PERIPHERAL_MOTOR_X
+                            } else {
+                                x
+                            }
+                            val flickOriginY = if (DetectionState.useMotorForPostTapSwipe) {
+                                DetectionState.PERIPHERAL_MOTOR_Y
+                            } else {
+                                y
+                            }
+                            val deltaY = DetectionState.postTapFlickDeltaY // Mặc định +20f
+                            dispatchSwipe(
+                                startX = flickOriginX,
+                                startY = flickOriginY,
+                                endX = flickOriginX,
+                                endY = flickOriginY + deltaY,
+                                durationMs = 35L
+                            )
+                        }
                     }
 
                     override fun onCancelled(gestureDescription: GestureDescription?) {
                         super.onCancelled(gestureDescription)
-                        Log.w(TAG, "[NEURAL] Tap gesture cancelled at ($x, $y)")
+                        if (DetectionState.debugLoggingEnabled) {
+                            Log.w(TAG, "[NEURAL] Tap gesture cancelled at ($x, $y)")
+                        }
                     }
                 },
                 null
@@ -120,6 +172,83 @@ class NeuralAccessibilityService : AccessibilityService() {
             return dispatched
         } catch (e: Exception) {
             Log.e(TAG, "[NEURAL] Failed to dispatch tap gesture: ${e.message}", e)
+            return false
+        }
+    }
+
+    private var isSwipeInProgress = false
+
+    /**
+     * Executes a hardware-level swipe gesture using dispatchGesture.
+     * Pulls the crosshair from (startX, startY) towards (endX, endY).
+     */
+    private fun executeSwipe(
+        startX: Float,
+        startY: Float,
+        endX: Float,
+        endY: Float,
+        durationMs: Long,
+        detectionTimestamp: Long,
+        onCompleted: (() -> Unit)?
+    ): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            if (DetectionState.debugLoggingEnabled) {
+                Log.e(TAG, "[NEURAL] dispatchGesture requires API 24+")
+            }
+            return false
+        }
+
+        // Avoid overlapping concurrent swipes
+        if (isSwipeInProgress) return false
+
+        try {
+            val path = Path().apply {
+                moveTo(startX, startY)
+                lineTo(endX, endY)
+            }
+
+            val stroke = GestureDescription.StrokeDescription(path, 0, durationMs.coerceIn(20L, 200L))
+            val gesture = GestureDescription.Builder()
+                .addStroke(stroke)
+                .build()
+
+            val dispatchStart = System.currentTimeMillis()
+            isSwipeInProgress = true
+
+            val dispatched = dispatchGesture(
+                gesture,
+                object : GestureResultCallback() {
+                    override fun onCompleted(gestureDescription: GestureDescription?) {
+                        super.onCompleted(gestureDescription)
+                        isSwipeInProgress = false
+                        if (DetectionState.debugLoggingEnabled) {
+                            val latency = System.currentTimeMillis() - dispatchStart
+                            Log.d(TAG, "[NEURAL] Swipe completed in ${latency}ms from ($startX, $startY) to ($endX, $endY)")
+                        }
+                        onCompleted?.invoke()
+                    }
+
+                    override fun onCancelled(gestureDescription: GestureDescription?) {
+                        super.onCancelled(gestureDescription)
+                        isSwipeInProgress = false
+                        if (DetectionState.debugLoggingEnabled) {
+                            Log.w(TAG, "[NEURAL] Swipe cancelled at ($endX, $endY)")
+                        }
+                    }
+                },
+                null
+            )
+
+            if (!dispatched) {
+                isSwipeInProgress = false
+            }
+
+            return dispatched
+        } catch (e: Exception) {
+            isSwipeInProgress = false
+            if (DetectionState.debugLoggingEnabled) {
+                Log.e(TAG, "[NEURAL] Failed to dispatch swipe gesture: ${e.message}", e)
+            }
             return false
         }
     }
