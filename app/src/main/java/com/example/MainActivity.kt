@@ -100,6 +100,8 @@ fun ColorDetectorApp() {
     val lifecycleOwner = LocalLifecycleOwner.current
     val isRunning by DetectionState.isServiceRunning.collectAsStateWithLifecycle()
     val metrics by DetectionState.metrics.collectAsStateWithLifecycle()
+    val neuralStatus by DetectionState.neuralStatus.collectAsStateWithLifecycle()
+    val isAccessibilityActive by NeuralAccessibilityService.isServiceActive.collectAsStateWithLifecycle()
 
     var hasOverlayPermission by remember {
         mutableStateOf(Settings.canDrawOverlays(context))
@@ -230,14 +232,29 @@ fun ColorDetectorApp() {
             // Live Detection HUD Card
             LiveDetectionCard(metrics = metrics, isRunning = isRunning)
 
+            // Artificial Neural Reflex System Card
+            PatientNeuralStatusCard(
+                neuralStatus = neuralStatus,
+                isAccessibilityActive = isAccessibilityActive
+            )
+
             // Permissions Checklist Card
             PermissionsCard(
                 hasOverlayPermission = hasOverlayPermission,
                 hasNotificationPermission = hasNotificationPermission,
+                isAccessibilityActive = isAccessibilityActive,
                 onRequestOverlay = requestOverlayPermission,
                 onRequestNotification = {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                },
+                onRequestAccessibility = {
+                    try {
+                        val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                        context.startActivity(intent)
+                    } catch (e: Exception) {
+                        Toast.makeText(context, "Cannot open Accessibility settings", Toast.LENGTH_SHORT).show()
                     }
                 },
                 onRefresh = {
@@ -688,11 +705,245 @@ fun LiveDetectionCard(metrics: DetectionMetrics, isRunning: Boolean) {
 }
 
 @Composable
+fun PatientNeuralStatusCard(
+    neuralStatus: NeuralStatusData,
+    isAccessibilityActive: Boolean
+) {
+    val context = LocalContext.current
+    var isMotorEnabled by remember { mutableStateOf(DetectionState.isMotorReflexEnabled) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF0F172A)
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            1.5.dp,
+            if (neuralStatus.currentState == NeuralState.STIMULATED) Color(0xFFFF1744) else Color(0xFF334155)
+        )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "PATIENT NEURAL STATUS",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF38BDF8)
+                    )
+                    Text(
+                        text = "Artificial Neural Reflex System",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color(0xFF94A3B8)
+                    )
+                }
+
+                Surface(
+                    color = if (isAccessibilityActive) Color(0xFF1B5E20) else Color(0xFF451A03),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = if (isAccessibilityActive) "MOTOR READY ✓" else "ACCESSIBILITY OFF",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isAccessibilityActive) Color(0xFF4ADE80) else Color(0xFFFB923C),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            // Sensory Input & Motor Response Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // SENSORY INPUT
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    color = Color(0xFF1E293B),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = "SENSORY INPUT",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF94A3B8)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        val sensorColor = when (neuralStatus.sensoryInput) {
+                            DetectionResult.RED -> Color(0xFFFF1744)
+                            DetectionResult.GREEN -> Color(0xFF00E676)
+                            DetectionResult.SCANNING -> Color.White
+                        }
+                        Text(
+                            text = neuralStatus.sensoryInput.name,
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Black,
+                            color = sensorColor
+                        )
+                        Text(
+                            text = "Sensor: (801, 359)",
+                            fontSize = 10.sp,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                }
+
+                // MOTOR RESPONSE
+                Surface(
+                    modifier = Modifier.weight(1f),
+                    color = Color(0xFF1E293B),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Text(
+                            text = "MOTOR RESPONSE",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF94A3B8)
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            text = "TAP (${DetectionState.TAP_X.toInt()}, ${DetectionState.TAP_Y.toInt()})",
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.Black,
+                            color = if (isMotorEnabled && isAccessibilityActive) Color(0xFF38BDF8) else Color(0xFF64748B)
+                        )
+                        Text(
+                            text = "Edge-triggered (<100ms)",
+                            fontSize = 10.sp,
+                            color = Color(0xFF64748B)
+                        )
+                    }
+                }
+            }
+
+            // State Transition Row
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFF1E293B),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "STATE TRANSITION",
+                            fontSize = 10.sp,
+                            color = Color(0xFF94A3B8),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "${neuralStatus.previousState.name} → ${neuralStatus.currentState.name}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text(
+                            text = "REFLEX EVENT COUNT",
+                            fontSize = 10.sp,
+                            color = Color(0xFF94A3B8),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "${neuralStatus.reflexCount} TAPS",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color(0xFFFBBF24)
+                        )
+                    }
+                }
+            }
+
+            // Latency & Benchmark stats
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Reflex latency: ${if (neuralStatus.lastLatencyMs > 0) "${neuralStatus.lastLatencyMs} ms" else "Ready"}",
+                    fontSize = 11.sp,
+                    color = if (neuralStatus.lastLatencyMs in 1..100) Color(0xFF4ADE80) else Color(0xFFCBD5E1),
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold
+                )
+
+                if (!isAccessibilityActive) {
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Cannot open Accessibility settings", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.height(32.dp)
+                    ) {
+                        Text("Bật Accessibility", fontSize = 10.sp)
+                    }
+                }
+            }
+
+            // Switch: Enable Motor Reflex
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Phản xạ vận động tự động (Motor Reflex Tap)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "Chỉ tap 1 lần khi chuyển A → RED, chặn spam RED → RED",
+                        fontSize = 10.sp,
+                        color = Color(0xFF94A3B8)
+                    )
+                }
+                Switch(
+                    checked = isMotorEnabled,
+                    onCheckedChange = { checked ->
+                        isMotorEnabled = checked
+                        DetectionState.isMotorReflexEnabled = checked
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
 fun PermissionsCard(
     hasOverlayPermission: Boolean,
     hasNotificationPermission: Boolean,
+    isAccessibilityActive: Boolean,
     onRequestOverlay: () -> Unit,
     onRequestNotification: () -> Unit,
+    onRequestAccessibility: () -> Unit,
     onRefresh: () -> Unit
 ) {
     Card(
@@ -824,6 +1075,58 @@ fun PermissionsCard(
                     }
                 }
             }
+
+            // Accessibility Permission Row for Motor Tap Gesture
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        if (isAccessibilityActive) Icons.Default.CheckCircle else Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = if (isAccessibilityActive) Color(0xFF00C853) else Color(0xFFFFAB00),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Column {
+                        Text(
+                            text = "Motor Gesture (Accessibility Service)",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = if (isAccessibilityActive) "Connected & Ready to tap (1205, 479)" else "Cần bật trong Trợ năng để phát tap",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isAccessibilityActive) Color(0xFF00C853) else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                if (!isAccessibilityActive) {
+                    OutlinedButton(
+                        onClick = onRequestAccessibility,
+                        modifier = Modifier.height(34.dp)
+                    ) {
+                        Text("Grant", fontSize = 11.sp)
+                    }
+                } else {
+                    Surface(
+                        color = Color(0xFF00C853).copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Text(
+                            text = "Ready ✓",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF00C853),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
         }
     }
 }
@@ -878,6 +1181,32 @@ fun SimulationCard(
                 Text(
                     "🔥 TEST: TÂM ĐỎ + NỀN CỎ XANH (120px Grass)",
                     color = Color(0xFFFF1744),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
+
+            // Test Motor Tap at (1205, 479)
+            OutlinedButton(
+                onClick = {
+                    val context = androidx.compose.ui.platform.AndroidUiDispatcher.CurrentThread // or LocalContext
+                    val dispatched = NeuralAccessibilityService.dispatchTap(
+                        DetectionState.TAP_X,
+                        DetectionState.TAP_Y
+                    )
+                    if (!dispatched) {
+                        // Service not connected
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color(0xFF38BDF8).copy(alpha = 0.12f)
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF38BDF8))
+            ) {
+                Text(
+                    "⚡ TEST PHẢN XẠ MOTOR TAP (1205, 479)",
+                    color = Color(0xFF38BDF8),
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp
                 )

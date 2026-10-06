@@ -44,8 +44,13 @@ object DetectionState {
     const val DEVICE_MODEL = "OPPO CPH2631"
     const val TARGET_WIDTH = 1604
     const val TARGET_HEIGHT = 720
+    // Sensory input coordinates (Screen color sensor)
     const val TARGET_X = 801
     const val TARGET_Y = 359
+
+    // Motor reflex response coordinates (Hospital patient reflex tap target)
+    const val TAP_X = 1205f
+    const val TAP_Y = 479f
 
     // Configurable ROI settings
     var roiRadius: Int = 10 // ROI diameter = 20px
@@ -53,11 +58,17 @@ object DetectionState {
     var centerPriorityEnabled: Boolean = true // Always prioritize center core over background
     var sensitivityThreshold: Float = 1.0f // Sensitivity multiplier
 
+    // Neural reflex motor response enable flag
+    var isMotorReflexEnabled: Boolean = true
+
     private val _isServiceRunning = MutableStateFlow(false)
     val isServiceRunning: StateFlow<Boolean> = _isServiceRunning.asStateFlow()
 
     private val _metrics = MutableStateFlow(DetectionMetrics())
     val metrics: StateFlow<DetectionMetrics> = _metrics.asStateFlow()
+
+    private val _neuralStatus = MutableStateFlow(NeuralStatusData())
+    val neuralStatus: StateFlow<NeuralStatusData> = _neuralStatus.asStateFlow()
 
     fun setServiceRunning(running: Boolean) {
         _isServiceRunning.value = running
@@ -67,8 +78,13 @@ object DetectionState {
         _metrics.value = newMetrics
     }
 
+    fun updateNeuralStatus(status: NeuralStatusData) {
+        _neuralStatus.value = status
+    }
+
     fun reset() {
         _metrics.value = DetectionMetrics()
+        _neuralStatus.value = NeuralStatusData()
     }
 }
 

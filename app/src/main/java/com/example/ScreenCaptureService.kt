@@ -47,6 +47,7 @@ class ScreenCaptureService : Service() {
     private val serviceJob = Job()
     private val serviceScope = CoroutineScope(Dispatchers.Default + serviceJob)
     private var captureLoopJob: Job? = null
+    private val neuralReflex = ArtificialNeuralReflex()
 
     companion object {
         const val CHANNEL_ID = "screen_capture_channel"
@@ -373,6 +374,21 @@ class ScreenCaptureService : Service() {
                                     }
                                 }
 
+                                // Artificial Neural Reflex layer (Hospital patient monitor edge-trigger):
+                                val detectionTimestamp = System.currentTimeMillis()
+                                val reflexDecision = neuralReflex.process(result, detectionTimestamp)
+
+                                if (reflexDecision == ReflexDecision.REFLEX_TAP && DetectionState.isMotorReflexEnabled) {
+                                    NeuralAccessibilityService.dispatchTap(
+                                        x = DetectionState.TAP_X,
+                                        y = DetectionState.TAP_Y,
+                                        detectionTimestamp = detectionTimestamp,
+                                        onLatencyMeasured = { latencyMs ->
+                                            neuralReflex.recordLatency(latencyMs)
+                                        }
+                                    )
+                                }
+
                                 totalProcessedFrames++
                                 framesCounted++
                                 val now = System.currentTimeMillis()
@@ -445,6 +461,7 @@ class ScreenCaptureService : Service() {
         mediaProjection = null
 
         DetectionState.setServiceRunning(false)
+        neuralReflex.reset()
     }
 
     override fun onDestroy() {
