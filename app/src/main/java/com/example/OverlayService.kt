@@ -324,6 +324,18 @@ class OverlayService : Service() {
         val tv = statusTextView ?: return
         val dot = statusDot ?: return
 
+        // Parkinson Auto-Hold (Ghìm đè giữ) active visual indicator
+        if (metrics.isAutoHolding || DetectionState.isAutoHoldingActive) {
+            tv.text = String.format("STATUS: 🦾 GHÌM ĐÈ GIỮ (%dms)", DetectionState.holdConfirmationDurationMs)
+            tv.setTextColor(0xFF00E5FF.toInt()) // High-visibility Cyan
+            (dot.background as? GradientDrawable)?.setColor(0xFF00E5FF.toInt())
+            (overlayView?.background as? GradientDrawable)?.setStroke(
+                (resources.displayMetrics.density * 2.5f).toInt(),
+                0xDD00E5FF.toInt()
+            )
+            return
+        }
+
         when (metrics.result) {
             DetectionResult.RED -> {
                 if (neural.currentState == NeuralState.HOLDING) {

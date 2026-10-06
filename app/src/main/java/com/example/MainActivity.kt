@@ -367,14 +367,26 @@ fun ColorDetectorApp() {
                     )
                     val decision = DetectionState.neuralReflex.process(status, now)
                     if (decision == ReflexDecision.REFLEX_TAP && DetectionState.isMotorReflexEnabled) {
-                        NeuralAccessibilityService.dispatchTap(
-                            x = DetectionState.TAP_X,
-                            y = DetectionState.TAP_Y,
-                            detectionTimestamp = now,
-                            onLatencyMeasured = { latencyMs ->
-                                DetectionState.neuralReflex.recordLatency(latencyMs)
-                            }
-                        )
+                        if (DetectionState.isParkinsonAutoHoldEnabled) {
+                            NeuralAccessibilityService.dispatchHold(
+                                x = DetectionState.TAP_X,
+                                y = DetectionState.TAP_Y,
+                                holdDurationMs = DetectionState.holdConfirmationDurationMs,
+                                detectionTimestamp = now,
+                                onLatencyMeasured = { latencyMs ->
+                                    DetectionState.neuralReflex.recordLatency(latencyMs)
+                                }
+                            )
+                        } else {
+                            NeuralAccessibilityService.dispatchTap(
+                                x = DetectionState.TAP_X,
+                                y = DetectionState.TAP_Y,
+                                detectionTimestamp = now,
+                                onLatencyMeasured = { latencyMs ->
+                                    DetectionState.neuralReflex.recordLatency(latencyMs)
+                                }
+                            )
+                        }
                     }
                 }
             )
@@ -558,7 +570,7 @@ fun AlgorithmSettingsCard() {
                             border = if (isSelected) {
                                 androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
                             } else {
-                                ButtonDefaults.outlinedButtonBorder
+                                ButtonDefaults.outlinedButtonBorder(enabled = true)
                             }
                         ) {
                             Text(label, fontSize = 10.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
@@ -1395,6 +1407,113 @@ fun PreStartParametersConfigCard(isRunning: Boolean) {
                         unfocusedBorderColor = Color(0xFF475569)
                     )
                 )
+            }
+
+            // 4. Parkinson Assist & Auto-Hold
+            val isParkinsonAutoHold by DetectionState.isParkinsonAutoHoldEnabledFlow.collectAsStateWithLifecycle()
+            val scanRangeX by DetectionState.horizontalScanRangeXFlow.collectAsStateWithLifecycle()
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = Color(0xFF1E293B).copy(alpha = 0.8f),
+                shape = RoundedCornerShape(10.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (isParkinsonAutoHold) Color(0xFF00E5FF) else Color(0xFF334155)
+                )
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "🦾 HỖ TRỢ BỆNH NHÂN PARKINSON",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isParkinsonAutoHold) Color(0xFF00E5FF) else Color.White
+                                )
+                            }
+                            Text(
+                                text = "Quét phương ngang X bù rung tay & tự động ghìm đè giữ (Auto-Hold)",
+                                fontSize = 10.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                        }
+                        Switch(
+                            checked = isParkinsonAutoHold,
+                            onCheckedChange = { checked ->
+                                DetectionState.isParkinsonAutoHoldEnabled = checked
+                            },
+                            enabled = !isRunning
+                        )
+                    }
+
+                    if (isParkinsonAutoHold) {
+                        Text(
+                            text = "• Thuật toán quét trục X: Tìm dải đỏ liên tục, tự động né tránh vùng Scanning/Green khi tay bệnh nhân bị run.\n• Cử chỉ: Thay vì tap nháy, máy sẽ tự động GHÌM ĐÈ GIỮ (Hold) tại vị trí mục tiêu đủ $holdDurationText ms quy định.",
+                            fontSize = 10.sp,
+                            color = Color(0xFFCBD5E1),
+                            lineHeight = 14.sp
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Phạm vi quét ngang X:",
+                                fontSize = 10.sp,
+                                color = Color(0xFF94A3B8)
+                            )
+                            Text(
+                                text = "±$scanRangeX px",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF00E5FF),
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            listOf(20, 30, 45, 60).forEach { px ->
+                                val isSelected = (scanRangeX == px)
+                                Surface(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clickable(enabled = !isRunning) {
+                                            DetectionState.horizontalScanRangeX = px
+                                        },
+                                    color = if (isSelected) Color(0xFF00838F) else Color(0xFF0F172A),
+                                    shape = RoundedCornerShape(6.dp),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        1.dp,
+                                        if (isSelected) Color(0xFF00E5FF) else Color(0xFF334155)
+                                    )
+                                ) {
+                                    Box(
+                                        modifier = Modifier.padding(vertical = 5.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "±${px}px",
+                                            fontSize = 10.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) Color.White else Color(0xFF94A3B8)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

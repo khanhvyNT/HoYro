@@ -344,13 +344,67 @@ class ScreenCaptureService : Service() {
                                     }
                                 }
 
+                                // Parkinson tremor horizontal X-scan algorithm:
+                                // Scans across X-axis around the crosshair to lock onto the RED target cluster
+                                // even when tremors horizontally shift the sensor into scanning/green borders.
+                                val isParkinsonMode = DetectionState.isParkinsonAutoHoldEnabled
+                                val scanRangeX = DetectionState.horizontalScanRangeX
+                                val xScanMin = (targetCenterX - scanRangeX).coerceIn(0, imgWidth - 1)
+                                val xScanMax = (targetCenterX + scanRangeX).coerceIn(0, imgWidth - 1)
+                                val yScanMin = (targetCenterY - 8).coerceIn(0, imgHeight - 1)
+                                val yScanMax = (targetCenterY + 8).coerceIn(0, imgHeight - 1)
+
+                                var bestRedCol = -1
+                                var maxRedColCount = 0
+                                var redClusterStartX = -1
+                                var redClusterEndX = -1
+                                var inRedCluster = false
+                                var horizontalRedTotal = 0
+
+                                for (x in xScanMin..xScanMax) {
+                                    var colRed = 0
+                                    var colGreen = 0
+                                    for (y in yScanMin..yScanMax) {
+                                        val pixelIndex = y * rowStride + x * pixelStride
+                                        if (pixelIndex + 2 < buffer.capacity()) {
+                                            val r = buffer.get(pixelIndex).toInt() and 0xFF
+                                            val g = buffer.get(pixelIndex + 1).toInt() and 0xFF
+                                            val b = buffer.get(pixelIndex + 2).toInt() and 0xFF
+                                            if (isRedColor(r, g, b)) colRed++
+                                            else if (isGreenColor(r, g, b)) colGreen++
+                                        }
+                                    }
+                                    horizontalRedTotal += colRed
+                                    // Column verified as RED and avoiding Green/Scanning interference
+                                    if (colRed >= 2 && colRed > colGreen) {
+                                        if (!inRedCluster) {
+                                            inRedCluster = true
+                                            if (redClusterStartX == -1) redClusterStartX = x
+                                        }
+                                        redClusterEndX = x
+                                        if (colRed > maxRedColCount) {
+                                            maxRedColCount = colRed
+                                            bestRedCol = x
+                                        }
+                                    } else {
+                                        inRedCluster = false
+                                    }
+                                }
+
+                                val hasHorizontalRedTarget = (redClusterStartX != -1 && redClusterEndX != -1 && horizontalRedTotal >= 4)
+                                val horizontalXOffset = if (bestRedCol != -1) bestRedCol - targetCenterX else 0
+                                val horizontalRedWidth = if (redClusterStartX != -1 && redClusterEndX != -1) redClusterEndX - redClusterStartX + 1 else 0
+
                                 // Smart Hierarchical Classification:
                                 // 1. Priority 1 (Center Core Priority):
-                                // If the center crosshair or inner core (radius <= 3) is RED,
-                                // immediately trigger RED even if the outer ROI contains green foliage/grass!
                                 var triggerReason = "Scanning"
                                 val result = if (centerPriority && (centerIsRed || innerRedPixels >= 2)) {
                                     triggerReason = if (centerIsRed) "Center Pixel Red" else "Core Red ($innerRedPixels px)"
+                                    DetectionResult.RED
+                                } else if (isParkinsonMode && hasHorizontalRedTarget) {
+                                    // Parkinson tremor compensation: horizontal X scan detected the locked RED target,
+                                    // avoiding the non-red/green peripheral columns!
+                                    triggerReason = "Parkinson X-Scan Red (Offset: ${horizontalXOffset}px, Span: ${horizontalRedWidth}px)"
                                     DetectionResult.RED
                                 } else if (centerPriority && (centerIsGreen || innerGreenPixels >= 2)) {
                                     triggerReason = if (centerIsGreen) "Center Pixel Green" else "Core Green ($innerGreenPixels px)"
@@ -379,14 +433,28 @@ class ScreenCaptureService : Service() {
                                 val reflexDecision = neuralReflex.process(result, detectionTimestamp)
 
                                 if (reflexDecision == ReflexDecision.REFLEX_TAP && DetectionState.isMotorReflexEnabled) {
-                                    NeuralAccessibilityService.dispatchTap(
-                                        x = DetectionState.TAP_X,
-                                        y = DetectionState.TAP_Y,
-                                        detectionTimestamp = detectionTimestamp,
-                                        onLatencyMeasured = { latencyMs ->
-                                            neuralReflex.recordLatency(latencyMs)
-                                        }
-                                    )
+                                    if (DetectionState.isParkinsonAutoHoldEnabled) {
+                                        // Automated sustained press-and-hold (ghìm đè giữ) for Parkinson's patients
+                                        NeuralAccessibilityService.dispatchHold(
+                                            x = DetectionState.TAP_X,
+                                            y = DetectionState.TAP_Y,
+                                            holdDurationMs = DetectionState.holdConfirmationDurationMs,
+                                            detectionTimestamp = detectionTimestamp,
+                                            onLatencyMeasured = { latencyMs ->
+                                                neuralReflex.recordLatency(latencyMs)
+                                            }
+                                        )
+                                    } else {
+                                        // Standard momentary tap gesture (40ms)
+                                        NeuralAccessibilityService.dispatchTap(
+                                            x = DetectionState.TAP_X,
+                                            y = DetectionState.TAP_Y,
+                                            detectionTimestamp = detectionTimestamp,
+                                            onLatencyMeasured = { latencyMs ->
+                                                neuralReflex.recordLatency(latencyMs)
+                                            }
+                                        )
+                                    }
                                 }
 
                                 totalProcessedFrames++
@@ -414,7 +482,10 @@ class ScreenCaptureService : Service() {
                                         fps = currentFps,
                                         frameCount = totalProcessedFrames,
                                         lastUpdateTimeMs = now,
-                                        triggerReason = triggerReason
+                                        triggerReason = triggerReason,
+                                        horizontalScanRedOffset = horizontalXOffset,
+                                        horizontalRedWidth = horizontalRedWidth,
+                                        isAutoHolding = DetectionState.isAutoHoldingActive
                                     )
                                 )
                             }

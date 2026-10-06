@@ -44,6 +44,28 @@ class NeuralAccessibilityService : AccessibilityService() {
 
             return service.executeTap(x, y, detectionTimestamp, onLatencyMeasured)
         }
+
+        /**
+         * Dispatches an automated sustained press-and-hold (ghìm đè giữ) gesture
+         * for patients with Parkinson's disease or neuro-motor impairments.
+         * Keeps ACTION_DOWN active for holdDurationMs before sending ACTION_UP.
+         */
+        fun dispatchHold(
+            x: Float = DetectionState.TAP_X,
+            y: Float = DetectionState.TAP_Y,
+            holdDurationMs: Long = DetectionState.holdConfirmationDurationMs,
+            detectionTimestamp: Long = System.currentTimeMillis(),
+            onLatencyMeasured: ((Long) -> Unit)? = null,
+            onHoldCompleted: (() -> Unit)? = null
+        ): Boolean {
+            val service = instance
+            if (service == null) {
+                Log.w(TAG, "[NEURAL] AccessibilityService not connected. Please enable in Settings.")
+                return false
+            }
+
+            return service.executeHold(x, y, holdDurationMs, detectionTimestamp, onLatencyMeasured, onHoldCompleted)
+        }
     }
 
     override fun onServiceConnected() {
@@ -120,6 +142,74 @@ class NeuralAccessibilityService : AccessibilityService() {
             return dispatched
         } catch (e: Exception) {
             Log.e(TAG, "[NEURAL] Failed to dispatch tap gesture: ${e.message}", e)
+            return false
+        }
+    }
+
+    /**
+     * Executes sustained press-and-hold (ghìm đè giữ) via dispatchGesture.
+     * Stroke duration equals holdDurationMs so Android maintains touch down continuously
+     * until the specified hold duration expires.
+     */
+    private fun executeHold(
+        x: Float,
+        y: Float,
+        holdDurationMs: Long,
+        detectionTimestamp: Long,
+        onLatencyMeasured: ((Long) -> Unit)?,
+        onHoldCompleted: (() -> Unit)?
+    ): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+            Log.e(TAG, "[PARKINSON] dispatchGesture requires API 24+")
+            return false
+        }
+
+        try {
+            val path = Path().apply {
+                moveTo(x, y)
+            }
+
+            val strokeDuration = holdDurationMs.coerceIn(40L, 10000L)
+            val stroke = GestureDescription.StrokeDescription(path, 0, strokeDuration)
+            val gesture = GestureDescription.Builder()
+                .addStroke(stroke)
+                .build()
+
+            val dispatchStartTimestamp = System.currentTimeMillis()
+            val latencyMs = (dispatchStartTimestamp - detectionTimestamp).coerceAtLeast(0L)
+
+            Log.i(TAG, "[PARKINSON] Auto-Hold (Ghìm đè giữ) started at $dispatchStartTimestamp for ${strokeDuration}ms at ($x, $y)")
+            onLatencyMeasured?.invoke(latencyMs)
+
+            DetectionState.isAutoHoldingActive = true
+
+            val dispatched = dispatchGesture(
+                gesture,
+                object : GestureResultCallback() {
+                    override fun onCompleted(gestureDescription: GestureDescription?) {
+                        super.onCompleted(gestureDescription)
+                        DetectionState.isAutoHoldingActive = false
+                        Log.d(TAG, "[PARKINSON] Auto-Hold (Ghìm đè giữ) completed after ${strokeDuration}ms at ($x, $y)")
+                        onHoldCompleted?.invoke()
+                    }
+
+                    override fun onCancelled(gestureDescription: GestureDescription?) {
+                        super.onCancelled(gestureDescription)
+                        DetectionState.isAutoHoldingActive = false
+                        Log.w(TAG, "[PARKINSON] Auto-Hold cancelled at ($x, $y)")
+                    }
+                },
+                null
+            )
+
+            if (!dispatched) {
+                DetectionState.isAutoHoldingActive = false
+            }
+
+            return dispatched
+        } catch (e: Exception) {
+            DetectionState.isAutoHoldingActive = false
+            Log.e(TAG, "[PARKINSON] Failed to dispatch hold gesture: ${e.message}", e)
             return false
         }
     }

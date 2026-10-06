@@ -34,7 +34,10 @@ data class DetectionMetrics(
     val fps: Int = 0,
     val frameCount: Long = 0L,
     val lastUpdateTimeMs: Long = 0L,
-    val triggerReason: String = "Idle"
+    val triggerReason: String = "Idle",
+    val horizontalScanRedOffset: Int = 0,
+    val horizontalRedWidth: Int = 0,
+    val isAutoHolding: Boolean = false
 )
 
 /**
@@ -105,6 +108,31 @@ object DetectionState {
         get() = _holdConfirmationDurationMs.value
         set(value) {
             _holdConfirmationDurationMs.value = value.coerceAtLeast(0L)
+        }
+
+    // Parkinson Assist & Auto-Hold Settings
+    private val _isParkinsonAutoHoldEnabled = MutableStateFlow(true)
+    val isParkinsonAutoHoldEnabledFlow: StateFlow<Boolean> = _isParkinsonAutoHoldEnabled.asStateFlow()
+    var isParkinsonAutoHoldEnabled: Boolean
+        get() = _isParkinsonAutoHoldEnabled.value
+        set(value) {
+            _isParkinsonAutoHoldEnabled.value = value
+        }
+
+    private val _horizontalScanRangeX = MutableStateFlow(30) // Horizontal X-scan width ±30px
+    val horizontalScanRangeXFlow: StateFlow<Int> = _horizontalScanRangeX.asStateFlow()
+    var horizontalScanRangeX: Int
+        get() = _horizontalScanRangeX.value
+        set(value) {
+            _horizontalScanRangeX.value = value.coerceIn(10, 80)
+        }
+
+    private val _isAutoHoldingActive = MutableStateFlow(false)
+    val isAutoHoldingActiveFlow: StateFlow<Boolean> = _isAutoHoldingActive.asStateFlow()
+    var isAutoHoldingActive: Boolean
+        get() = _isAutoHoldingActive.value
+        set(value) {
+            _isAutoHoldingActive.value = value
         }
 
     // Neural reflex motor response enable flag & reactive StateFlow
