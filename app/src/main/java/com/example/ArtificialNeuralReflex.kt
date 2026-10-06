@@ -44,7 +44,7 @@ data class NeuralStatusData(
     val isHoldVerificationActive: Boolean = true,
     val isAutoHolding: Boolean = false,
     val isAutoHoldingActive: Boolean = false,
-    val horizontalDragDirection: String = "NONE",
+    val horizontalDragDirection: DragDirection = DragDirection.NONE,
     val horizontalDragDistanceX: Float = 0f
 )
 

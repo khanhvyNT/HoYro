@@ -10,11 +10,44 @@ import kotlinx.coroutines.flow.asStateFlow
  * - GREEN: Safe target detected at crosshair/ROI
  * - SCANNING: Other / background scanning
  */
-enum class DetectionResult(val label: String, val subtitleText: String, val colorHex: Long) {
-    RED("RED (Enemy)", "STATUS: RED", 0xFFFF3B30),
-    GREEN("GREEN (Safe)", "STATUS: GREEN", 0xFF34C759),
-    SCANNING("SCANNING", "STATUS: SCANNING...", 0xFFFFFFFF)
+enum class DetectionResult(val label: String, val subtitleText: String, val colorHex: Long, val symbol: String = "●") {
+    RED("RED (Enemy)", "STATUS: RED", 0xFFFF3B30, "🔴"),
+    GREEN("GREEN (Safe)", "STATUS: GREEN", 0xFF34C759, "🟢"),
+    SCANNING("SCANNING", "STATUS: SCANNING...", 0xFFFFFFFF, "⚪")
 }
+
+/**
+ * Direction enum for horizontal assistive drag tracking.
+ */
+enum class DragDirection(val label: String, val symbol: String) {
+    LEFT("LEFT", "←"),
+    RIGHT("RIGHT", "→"),
+    NONE("NONE", "•");
+
+    companion object {
+        fun fromString(value: String): DragDirection = when (value.uppercase()) {
+            "LEFT" -> LEFT
+            "RIGHT" -> RIGHT
+            else -> NONE
+        }
+    }
+}
+
+val String.symbol: String
+    get() = when (this.uppercase()) {
+        "LEFT" -> "←"
+        "RIGHT" -> "→"
+        else -> "•"
+    }
+
+val Any?.symbol: String
+    get() = when (this) {
+        is DragDirection -> this.symbol
+        is DetectionResult -> this.symbol
+        "LEFT", "Left" -> "←"
+        "RIGHT", "Right" -> "→"
+        else -> "•"
+    }
 
 /**
  * Real-time diagnostic statistics with inner-core and weighted detection details.
@@ -37,7 +70,7 @@ data class DetectionMetrics(
     val triggerReason: String = "Idle",
     val isAutoHolding: Boolean = false,
     val isAutoHoldingActive: Boolean = false,
-    val horizontalDragDirection: String = "NONE",
+    val horizontalDragDirection: DragDirection = DragDirection.NONE,
     val horizontalDragDistanceX: Float = 0f
 )
 
@@ -57,7 +90,7 @@ object DetectionState {
     // Auto-holding and assistive drag properties
     var isAutoHolding: Boolean = false
     var isAutoHoldingActive: Boolean = false
-    var horizontalDragDirection: String = "NONE"
+    var horizontalDragDirection: DragDirection = DragDirection.NONE
     var horizontalDragDistanceX: Float = 0f
 
     // Parkinson Motor Assistance: Horizontal scan strip (X = max, Y = 50px) and assisted swipe tracking
