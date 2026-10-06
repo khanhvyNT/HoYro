@@ -324,20 +324,6 @@ class OverlayService : Service() {
         val tv = statusTextView ?: return
         val dot = statusDot ?: return
 
-        // Parkinson Auto-Hold (Đè ghìm vuốt trục ngang) active visual indicator
-        if (metrics.isAutoHolding || DetectionState.isAutoHoldingActive) {
-            val dirSymbol = DetectionState.horizontalDragDirection.symbol
-            val distPx = DetectionState.horizontalDragDistanceX.toInt()
-            tv.text = String.format("STATUS: 🦾 ĐÈ GHÌM VUỐT NGANG (%s %dpx, %dms)", dirSymbol, distPx, DetectionState.holdConfirmationDurationMs)
-            tv.setTextColor(0xFF00E5FF.toInt()) // High-visibility Cyan
-            (dot.background as? GradientDrawable)?.setColor(0xFF00E5FF.toInt())
-            (overlayView?.background as? GradientDrawable)?.setStroke(
-                (resources.displayMetrics.density * 2.5f).toInt(),
-                0xDD00E5FF.toInt()
-            )
-            return
-        }
-
         when (metrics.result) {
             DetectionResult.RED -> {
                 if (neural.currentState == NeuralState.HOLDING) {

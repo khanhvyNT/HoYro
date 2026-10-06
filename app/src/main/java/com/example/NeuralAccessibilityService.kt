@@ -44,43 +44,6 @@ class NeuralAccessibilityService : AccessibilityService() {
 
             return service.executeTap(x, y, detectionTimestamp, onLatencyMeasured)
         }
-
-        /**
-         * Dispatches assistive swipe gesture from (startX, startY) to (endX, endY)
-         * to steer the camera toward moving humanoid entities.
-         */
-        fun dispatchSwipe(
-            startX: Float,
-            startY: Float,
-            endX: Float,
-            endY: Float,
-            durationMs: Long = 80L,
-            onCompleted: (() -> Unit)? = null
-        ): Boolean {
-            val service = instance
-            if (service == null) {
-                Log.w(TAG, "[NEURAL] AccessibilityService not connected.")
-                return false
-            }
-            return service.executeSwipe(startX, startY, endX, endY, durationMs, onCompleted)
-        }
-
-        /**
-         * Dispatches sustained touch hold gesture at (x, y) to stabilize grip for Parkinson patients.
-         */
-        fun dispatchHold(
-            x: Float,
-            y: Float,
-            durationMs: Long,
-            onCompleted: (() -> Unit)? = null
-        ): Boolean {
-            val service = instance
-            if (service == null) {
-                Log.w(TAG, "[NEURAL] AccessibilityService not connected.")
-                return false
-            }
-            return service.executeHold(x, y, durationMs, onCompleted)
-        }
     }
 
     override fun onServiceConnected() {
@@ -157,86 +120,6 @@ class NeuralAccessibilityService : AccessibilityService() {
             return dispatched
         } catch (e: Exception) {
             Log.e(TAG, "[NEURAL] Failed to dispatch tap gesture: ${e.message}", e)
-            return false
-        }
-    }
-
-    private fun executeSwipe(
-        startX: Float,
-        startY: Float,
-        endX: Float,
-        endY: Float,
-        durationMs: Long,
-        onCompleted: (() -> Unit)?
-    ): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
-        try {
-            val path = Path().apply {
-                moveTo(startX, startY)
-                lineTo(endX, endY)
-            }
-            val stroke = GestureDescription.StrokeDescription(path, 0, durationMs.coerceAtLeast(40L))
-            val gesture = GestureDescription.Builder().addStroke(stroke).build()
-
-            return dispatchGesture(
-                gesture,
-                object : GestureResultCallback() {
-                    override fun onCompleted(gestureDescription: GestureDescription?) {
-                        super.onCompleted(gestureDescription)
-                        Log.d(TAG, "[NEURAL] Swipe gesture completed from ($startX, $startY) to ($endX, $endY)")
-                        onCompleted?.invoke()
-                    }
-
-                    override fun onCancelled(gestureDescription: GestureDescription?) {
-                        super.onCancelled(gestureDescription)
-                        Log.w(TAG, "[NEURAL] Swipe gesture cancelled")
-                        onCompleted?.invoke()
-                    }
-                },
-                null
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "[NEURAL] Failed to dispatch swipe gesture: ${e.message}", e)
-            onCompleted?.invoke()
-            return false
-        }
-    }
-
-    private fun executeHold(
-        x: Float,
-        y: Float,
-        durationMs: Long,
-        onCompleted: (() -> Unit)?
-    ): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
-        try {
-            val path = Path().apply {
-                moveTo(x, y)
-                lineTo(x, y)
-            }
-            val stroke = GestureDescription.StrokeDescription(path, 0, durationMs.coerceAtLeast(50L))
-            val gesture = GestureDescription.Builder().addStroke(stroke).build()
-
-            return dispatchGesture(
-                gesture,
-                object : GestureResultCallback() {
-                    override fun onCompleted(gestureDescription: GestureDescription?) {
-                        super.onCompleted(gestureDescription)
-                        Log.d(TAG, "[NEURAL] Hold gesture completed at ($x, $y) for ${durationMs}ms")
-                        onCompleted?.invoke()
-                    }
-
-                    override fun onCancelled(gestureDescription: GestureDescription?) {
-                        super.onCancelled(gestureDescription)
-                        Log.w(TAG, "[NEURAL] Hold gesture cancelled")
-                        onCompleted?.invoke()
-                    }
-                },
-                null
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "[NEURAL] Failed to dispatch hold gesture: ${e.message}", e)
-            onCompleted?.invoke()
             return false
         }
     }

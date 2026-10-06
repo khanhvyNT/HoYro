@@ -129,22 +129,4 @@ class ArtificialNeuralReflexTest {
         assertEquals("Immediate mode fires tap on first edge", ReflexDecision.REFLEX_TAP, decision)
         assertEquals(1L, reflex.reflexCount)
     }
-
-    @Test
-    fun `test parkinson horizontal drag settings and state flows`() {
-        DetectionState.isParkinsonAutoHoldEnabled = true
-        DetectionState.horizontalDragDistanceX = 120f
-        DetectionState.horizontalDragDirection = DragDirection.RIGHT_TO_LEFT
-
-        assertEquals(true, DetectionState.isParkinsonAutoHoldEnabled)
-        assertEquals(120f, DetectionState.horizontalDragDistanceX)
-        assertEquals(DragDirection.RIGHT_TO_LEFT, DetectionState.horizontalDragDirection)
-        assertEquals("←", DetectionState.horizontalDragDirection.symbol)
-
-        DetectionState.horizontalDragDistanceX = 5f // should coerce to minimum 10f
-        assertEquals(10f, DetectionState.horizontalDragDistanceX)
-
-        DetectionState.horizontalDragDirection = DragDirection.SWEEP_BIDIRECTIONAL
-        assertEquals("⇄", DetectionState.horizontalDragDirection.symbol)
-    }
 }
