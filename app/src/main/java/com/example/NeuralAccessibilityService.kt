@@ -13,7 +13,7 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * NeuralAccessibilityService:
  * Motor response controller for the Artificial Neural Reflex system.
- * Dispatches simulated hardware tap gesture at (1205, 479) with minimum possible latency.
+ * Dispatches simulated hardware tap gesture at (597, 497) with minimum possible latency.
  */
 class NeuralAccessibilityService : AccessibilityService() {
 

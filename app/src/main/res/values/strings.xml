@@ -1,5 +1,5 @@
 <resources>
     <string name="app_name">Color Detector</string>
     <string name="accessibility_service_label">Hệ thống Thần kinh Nhân tạo (Reflex Tap)</string>
-    <string name="accessibility_service_description">Cho phép hệ thống thần kinh nhân tạo thực hiện phản xạ vận động tap tại tọa độ (1205, 479) khi chuyển trạng thái kích thích RED.</string>
+    <string name="accessibility_service_description">Cho phép hệ thống thần kinh nhân tạo thực hiện phản xạ vận động tap tại tọa độ (597, 497) khi chuyển trạng thái kích thích RED.</string>
 </resources>

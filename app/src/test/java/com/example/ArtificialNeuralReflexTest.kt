@@ -13,7 +13,7 @@ import org.robolectric.annotation.Config
  * Verifies the edge-triggered transition rules for the hospital patient neural reflex model:
  * - Background (State A): GREEN, SCANNING
  * - Stimulus (State B): RED
- * - Only A -> RED fires a motor reflex tap (1205, 479)
+ * - Only A -> RED fires a motor reflex tap (597, 497)
  * - UNKNOWN -> RED at boot is uncalibrated (0 tap)
  * - RED sustained (RED -> RED -> RED) is ignored (1 tap total)
  * - Return to baseline (RED -> GREEN/SCANNING -> RED) allows subsequent tap

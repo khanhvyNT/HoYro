@@ -710,7 +710,7 @@ fun PatientNeuralStatusCard(
     isAccessibilityActive: Boolean
 ) {
     val context = LocalContext.current
-    var isMotorEnabled by remember { mutableStateOf(DetectionState.isMotorReflexEnabled) }
+    val isMotorEnabled by DetectionState.isMotorReflexEnabledFlow.collectAsStateWithLifecycle()
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -927,7 +927,6 @@ fun PatientNeuralStatusCard(
                 Switch(
                     checked = isMotorEnabled,
                     onCheckedChange = { checked ->
-                        isMotorEnabled = checked
                         DetectionState.isMotorReflexEnabled = checked
                     }
                 )
@@ -1099,7 +1098,7 @@ fun PermissionsCard(
                             fontWeight = FontWeight.Medium
                         )
                         Text(
-                            text = if (isAccessibilityActive) "Connected & Ready to tap (1205, 479)" else "Cần bật trong Trợ năng để phát tap",
+                            text = if (isAccessibilityActive) "Connected & Ready to tap (597, 497)" else "Cần bật trong Trợ năng để phát tap",
                             style = MaterialTheme.typography.labelSmall,
                             color = if (isAccessibilityActive) Color(0xFF00C853) else MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1186,7 +1185,7 @@ fun SimulationCard(
                 )
             }
 
-            // Test Motor Tap at (1205, 479)
+            // Test Motor Tap at (597, 497)
             OutlinedButton(
                 onClick = {
                     val context = androidx.compose.ui.platform.AndroidUiDispatcher.CurrentThread // or LocalContext
@@ -1205,7 +1204,7 @@ fun SimulationCard(
                 border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF38BDF8))
             ) {
                 Text(
-                    "⚡ TEST PHẢN XẠ MOTOR TAP (1205, 479)",
+                    "⚡ TEST PHẢN XẠ MOTOR TAP (597, 497)",
                     color = Color(0xFF38BDF8),
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp

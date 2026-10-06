@@ -34,8 +34,8 @@ data class NeuralStatusData(
     val lastReflexTimestamp: Long = 0L,
     val lastLatencyMs: Long = 0L,
     val isAccessibilityActive: Boolean = false,
-    val motorTargetX: Float = 1205f,
-    val motorTargetY: Float = 479f
+    val motorTargetX: Float = 597f,
+    val motorTargetY: Float = 497f
 )
 
 /**
@@ -44,7 +44,7 @@ data class NeuralStatusData(
  * Rules:
  * 1. GREEN and SCANNING are Background (State A).
  * 2. RED is Stimulus (State B).
- * 3. Only A (Background) -> B (RED) triggers a motor reflex TAP at (1205, 479).
+ * 3. Only A (Background) -> B (RED) triggers a motor reflex TAP at (597, 497).
  * 4. RED -> RED is sustained stimulus, NO tap.
  * 5. UNKNOWN -> RED at boot is uncalibrated, NO tap. Must observe baseline A first.
  * 6. Edge-triggered transition detector with zero polling delay.
@@ -128,7 +128,7 @@ class ArtificialNeuralReflex(
                     logI("[NEURAL] RED detected at $detectionTimestamp")
                     logI("[NEURAL] State: BACKGROUND → RED")
                     logI("[NEURAL] REFLEX TRIGGERED (Count #$reflexCount)")
-                    logI("[NEURAL] TAP: (1205, 479)")
+                    logI("[NEURAL] TAP: (597, 497)")
                     onReflexTriggered?.invoke(detectionTimestamp)
                 }
                 NeuralState.STIMULATED -> {

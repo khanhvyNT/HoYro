@@ -49,8 +49,8 @@ object DetectionState {
     const val TARGET_Y = 359
 
     // Motor reflex response coordinates (Hospital patient reflex tap target)
-    const val TAP_X = 1205f
-    const val TAP_Y = 479f
+    const val TAP_X = 597f
+    const val TAP_Y = 497f
 
     // Configurable ROI settings
     var roiRadius: Int = 10 // ROI diameter = 20px
@@ -58,8 +58,21 @@ object DetectionState {
     var centerPriorityEnabled: Boolean = true // Always prioritize center core over background
     var sensitivityThreshold: Float = 1.0f // Sensitivity multiplier
 
-    // Neural reflex motor response enable flag
-    var isMotorReflexEnabled: Boolean = true
+    // Neural reflex motor response enable flag & reactive StateFlow
+    private val _isMotorReflexEnabled = MutableStateFlow(true)
+    val isMotorReflexEnabledFlow: StateFlow<Boolean> = _isMotorReflexEnabled.asStateFlow()
+
+    var isMotorReflexEnabled: Boolean
+        get() = _isMotorReflexEnabled.value
+        set(value) {
+            _isMotorReflexEnabled.value = value
+        }
+
+    fun toggleMotorReflex(): Boolean {
+        val next = !_isMotorReflexEnabled.value
+        _isMotorReflexEnabled.value = next
+        return next
+    }
 
     private val _isServiceRunning = MutableStateFlow(false)
     val isServiceRunning: StateFlow<Boolean> = _isServiceRunning.asStateFlow()
