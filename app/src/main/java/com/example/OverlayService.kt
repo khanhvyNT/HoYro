@@ -37,7 +37,6 @@ class OverlayService : Service() {
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
     private var statusTextView: TextView? = null
-    private var subTextView: TextView? = null
     private var statusDot: View? = null
 
     private val serviceJob = Job()
@@ -87,34 +86,29 @@ class OverlayService : Service() {
 
         val wm = windowManager ?: return
 
-        val density = resources.displayMetrics.density
+        val displayMetrics = resources.displayMetrics
+        val density = displayMetrics.density
         fun dp(dp: Float): Int = (dp * density + 0.5f).toInt()
 
-        // Root container: sleek translucent HUD pill positioned near bottom center
+        // Root container: sleek translucent HUD pill with only the status
         val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setPadding(dp(16f), dp(8f), dp(16f), dp(8f))
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(18f), dp(10f), dp(18f), dp(10f))
 
-            // Rounded dark background with subtle outline
+            // Rounded dark background with glow outline
             background = GradientDrawable().apply {
-                setColor(0xDD0D1117.toInt()) // Deep translucent slate
-                cornerRadius = dp(16f).toFloat()
+                setColor(0xEE0D1117.toInt()) // Deep translucent slate
+                cornerRadius = dp(24f).toFloat()
                 setStroke(dp(1.5f), 0x55FFFFFF)
             }
         }
 
-        // Horizontal status row (indicator dot + status text)
-        val statusRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
         // Circular glowing indicator dot
         val dot = View(this).apply {
-            val size = dp(10f)
+            val size = dp(12f)
             layoutParams = LinearLayout.LayoutParams(size, size).apply {
-                marginEnd = dp(8f)
+                marginEnd = dp(10f)
             }
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
@@ -122,32 +116,19 @@ class OverlayService : Service() {
             }
         }
         statusDot = dot
-        statusRow.addView(dot)
+        container.addView(dot)
 
-        // Subtitle TextView
+        // Single clean status text: STATUS: RED / GREEN / SCANNING...
         val textView = TextView(this).apply {
             text = "STATUS: SCANNING..."
             setTextColor(Color.WHITE)
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 16f)
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 17f)
             typeface = Typeface.create("sans-serif-black", Typeface.BOLD)
             gravity = Gravity.CENTER
             setShadowLayer(6f, 0f, 2f, Color.BLACK)
         }
         statusTextView = textView
-        statusRow.addView(textView)
-        container.addView(statusRow)
-
-        // Secondary caption showing target coordinates and device specs
-        val subText = TextView(this).apply {
-            text = "TARGET (801, 359) | OPPO CPH2631"
-            setTextColor(0xAAEEEEEE.toInt())
-            setTextSize(TypedValue.COMPLEX_UNIT_SP, 10f)
-            typeface = Typeface.MONOSPACE
-            gravity = Gravity.CENTER
-            setPadding(0, dp(2f), 0, 0)
-        }
-        subTextView = subText
-        container.addView(subText)
+        container.addView(textView)
 
         // WindowManager Layout Params (TYPE_APPLICATION_OVERLAY)
         val layoutType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -156,6 +137,10 @@ class OverlayService : Service() {
             @Suppress("DEPRECATION")
             WindowManager.LayoutParams.TYPE_PHONE
         }
+
+        // Use TOP or START for absolute screen coordinate positioning everywhere
+        val screenWidth = displayMetrics.widthPixels
+        val screenHeight = displayMetrics.heightPixels
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -166,38 +151,38 @@ class OverlayService : Service() {
                 WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            y = dp(50f) // Positioned near bottom center like a game subtitle
+            gravity = Gravity.TOP or Gravity.START
+            // Position near bottom center by default, but freely movable anywhere
+            x = (screenWidth / 2) - dp(95f)
+            y = screenHeight - dp(110f)
         }
         layoutParams = params
 
-        // Optional touch drag handling to let user reposition vertically if needed
+        // Free 2D Drag handling: Move anywhere on the screen
+        var initialX = 0
         var initialY = 0
+        var initialTouchX = 0f
         var initialTouchY = 0f
-        var isDragging = false
 
         container.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
+                    initialX = params.x
                     initialY = params.y
+                    initialTouchX = event.rawX
                     initialTouchY = event.rawY
-                    isDragging = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    val dy = (initialTouchY - event.rawY).toInt()
-                    if (Math.abs(dy) > dp(5f)) {
-                        isDragging = true
-                        params.y = (initialY + dy).coerceAtLeast(dp(10f))
-                        try {
-                            wm.updateViewLayout(container, params)
-                        } catch (e: Exception) {
-                            // Ignored if view detached
-                        }
+                    val dx = (event.rawX - initialTouchX).toInt()
+                    val dy = (event.rawY - initialTouchY).toInt()
+                    params.x = initialX + dx
+                    params.y = initialY + dy
+                    try {
+                        wm.updateViewLayout(container, params)
+                    } catch (e: Exception) {
+                        // Ignored if view detached
                     }
-                    true
-                }
-                MotionEvent.ACTION_UP -> {
                     true
                 }
                 else -> false
@@ -222,7 +207,6 @@ class OverlayService : Service() {
 
     private fun updateOverlayContent(metrics: DetectionMetrics) {
         val tv = statusTextView ?: return
-        val sub = subTextView ?: return
         val dot = statusDot ?: return
 
         when (metrics.result) {
@@ -254,22 +238,6 @@ class OverlayService : Service() {
                 )
             }
         }
-
-        // Secondary text with live sampling details and trigger reason
-        if (metrics.frameCount > 0) {
-            sub.text = String.format(
-                "%s | Core R:%d G:%d | [%d,%d,%d] %dfps",
-                metrics.triggerReason,
-                metrics.innerRedPixels,
-                metrics.innerGreenPixels,
-                metrics.centerR,
-                metrics.centerG,
-                metrics.centerB,
-                metrics.fps
-            )
-        } else {
-            sub.text = "TARGET (801, 359) | OPPO CPH2631"
-        }
     }
 
     override fun onDestroy() {
@@ -284,7 +252,6 @@ class OverlayService : Service() {
         }
         overlayView = null
         statusTextView = null
-        subTextView = null
         statusDot = null
     }
 }
