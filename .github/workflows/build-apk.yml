@@ -1,0 +1,126 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Loại APK muốn build (debug, release, all)'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - 'debug'
+          - 'release'
+          - 'all'
+      run_tests:
+        description: 'Chạy Unit Test trước khi đóng gói'
+        required: false
+        default: true
+        type: boolean
+  push:
+    branches:
+      - main
+      - master
+    paths-ignore:
+      - '**.md'
+      - '.gitignore'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build APK (${{ github.event.inputs.build_type || 'debug' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+          cache: 'gradle'
+
+      - name: Setup Environment & Keystore
+        run: |
+          # 1. Setup .env file for Secrets Gradle Plugin
+          if [ ! -f .env ]; then
+            if [ -f .env.example ]; then
+              cp .env.example .env
+              echo "Created .env from .env.example"
+            else
+              touch .env
+            fi
+          fi
+
+          # 2. Setup debug.keystore from base64 if present, or generate a valid one
+          if [ -f debug.keystore.base64 ]; then
+            base64 -d debug.keystore.base64 > debug.keystore
+            echo "Decoded debug.keystore from debug.keystore.base64"
+          fi
+
+          if [ ! -f debug.keystore ]; then
+            echo "Generating fallback debug.keystore..."
+            keytool -genkey -v \
+              -keystore debug.keystore \
+              -alias androiddebugkey \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass android \
+              -keypass android \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+          # 3. Setup fallback upload key for Release build if not supplied in secrets
+          if [ ! -f my-upload-key.jks ] && [ -z "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "Creating fallback upload keystore from debug.keystore for release..."
+            cp debug.keystore my-upload-key.jks
+          fi
+
+          # If custom upload keystore is supplied in GitHub Secrets:
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > my-upload-key.jks
+            echo "Loaded custom release keystore from secrets"
+          fi
+
+          # Make gradlew executable
+          chmod +x gradlew
+
+      - name: Run Unit Tests
+        if: ${{ github.event.inputs.run_tests != 'false' }}
+        run: |
+          ./gradlew testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Build Debug APK
+        if: ${{ github.event.inputs.build_type == 'debug' || github.event.inputs.build_type == 'all' || github.event_name == 'push' }}
+        run: |
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Build Release APK
+        if: ${{ github.event.inputs.build_type == 'release' || github.event.inputs.build_type == 'all' }}
+        env:
+          KEYSTORE_PATH: my-upload-key.jks
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD || 'android' }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD || 'android' }}
+        run: |
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Locate & Rename APKs
+        run: |
+          mkdir -p output-apks
+          find app/build/outputs/apk -name "*.apk" -type f -exec cp {} output-apks/ \;
+          echo "Generated APK files:"
+          ls -la output-apks/
+
+      - name: Upload APK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ColorDetector-APKs-${{ github.run_number }}
+          path: output-apks/*.apk
+          retention-days: 30
