@@ -367,28 +367,14 @@ fun ColorDetectorApp() {
                     )
                     val decision = DetectionState.neuralReflex.process(status, now)
                     if (decision == ReflexDecision.REFLEX_TAP && DetectionState.isMotorReflexEnabled) {
-                        if (DetectionState.isParkinsonAutoHoldEnabled) {
-                            NeuralAccessibilityService.dispatchHold(
-                                x = DetectionState.TAP_X,
-                                y = DetectionState.TAP_Y,
-                                holdDurationMs = DetectionState.holdConfirmationDurationMs,
-                                dragDistanceX = DetectionState.horizontalDragDistanceX,
-                                dragDirection = DetectionState.horizontalDragDirection,
-                                detectionTimestamp = now,
-                                onLatencyMeasured = { latencyMs ->
-                                    DetectionState.neuralReflex.recordLatency(latencyMs)
-                                }
-                            )
-                        } else {
-                            NeuralAccessibilityService.dispatchTap(
-                                x = DetectionState.TAP_X,
-                                y = DetectionState.TAP_Y,
-                                detectionTimestamp = now,
-                                onLatencyMeasured = { latencyMs ->
-                                    DetectionState.neuralReflex.recordLatency(latencyMs)
-                                }
-                            )
-                        }
+                        NeuralAccessibilityService.dispatchTap(
+                            x = DetectionState.TAP_X,
+                            y = DetectionState.TAP_Y,
+                            detectionTimestamp = now,
+                            onLatencyMeasured = { latencyMs ->
+                                DetectionState.neuralReflex.recordLatency(latencyMs)
+                            }
+                        )
                     }
                 }
             )
@@ -572,7 +558,7 @@ fun AlgorithmSettingsCard() {
                             border = if (isSelected) {
                                 androidx.compose.foundation.BorderStroke(1.5.dp, MaterialTheme.colorScheme.primary)
                             } else {
-                                ButtonDefaults.outlinedButtonBorder(enabled = true)
+                                ButtonDefaults.outlinedButtonBorder
                             }
                         ) {
                             Text(label, fontSize = 10.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal)
@@ -759,9 +745,6 @@ fun PatientNeuralStatusCard(
     val tapY by DetectionState.tapYFlow.collectAsStateWithLifecycle()
     val targetX by DetectionState.targetXFlow.collectAsStateWithLifecycle()
     val targetY by DetectionState.targetYFlow.collectAsStateWithLifecycle()
-    val isParkinsonMode by DetectionState.isParkinsonAutoHoldEnabledFlow.collectAsStateWithLifecycle()
-    val dragDistX by DetectionState.horizontalDragDistanceXFlow.collectAsStateWithLifecycle()
-    val dragDirMode by DetectionState.horizontalDragDirectionFlow.collectAsStateWithLifecycle()
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -866,13 +849,13 @@ fun PatientNeuralStatusCard(
                         )
                         Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = if (isParkinsonMode) "GHÌM VUỐT (${tapX.toInt()}, ${tapY.toInt()})" else "TAP (${tapX.toInt()}, ${tapY.toInt()})",
-                            fontSize = 13.sp,
+                            text = "TAP (${tapX.toInt()}, ${tapY.toInt()})",
+                            fontSize = 14.sp,
                             fontWeight = FontWeight.Black,
-                            color = if (isMotorEnabled && isAccessibilityActive) (if (isParkinsonMode) Color(0xFF00E5FF) else Color(0xFF38BDF8)) else Color(0xFF64748B)
+                            color = if (isMotorEnabled && isAccessibilityActive) Color(0xFF38BDF8) else Color(0xFF64748B)
                         )
                         Text(
-                            text = if (isParkinsonMode) "Đè vuốt ${dragDirMode.symbol} ${dragDistX.toInt()}px" else "Edge-triggered (<100ms)",
+                            text = "Edge-triggered (<100ms)",
                             fontSize = 10.sp,
                             color = Color(0xFF64748B)
                         )
@@ -1414,212 +1397,154 @@ fun PreStartParametersConfigCard(isRunning: Boolean) {
                 )
             }
 
-            // 4. Parkinson Assist & Auto-Hold
-            val isParkinsonAutoHold by DetectionState.isParkinsonAutoHoldEnabledFlow.collectAsStateWithLifecycle()
-            val scanRangeX by DetectionState.horizontalScanRangeXFlow.collectAsStateWithLifecycle()
-            val dragDistanceX by DetectionState.horizontalDragDistanceXFlow.collectAsStateWithLifecycle()
-            val dragDirection by DetectionState.horizontalDragDirectionFlow.collectAsStateWithLifecycle()
-            var dragDistanceText by remember(dragDistanceX) { mutableStateOf(dragDistanceX.toInt().toString()) }
+            // 4. Parkinson Assistance: Dải quét ngang X = max, Y = 50px & Vuốt đè giữ
+            val isTrackingEnabled by DetectionState.isHumanoidTrackingEnabledFlow.collectAsStateWithLifecycle()
+            val swipeStartX by DetectionState.swipeStartXFlow.collectAsStateWithLifecycle()
+            val swipeStartY by DetectionState.swipeStartYFlow.collectAsStateWithLifecycle()
+            val scanStripHeight by DetectionState.scanStripHeightFlow.collectAsStateWithLifecycle()
+
+            var swipeStartXText by remember(swipeStartX) { mutableStateOf(swipeStartX.toInt().toString()) }
+            var swipeStartYText by remember(swipeStartY) { mutableStateOf(swipeStartY.toInt().toString()) }
 
             Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = Color(0xFF1E293B).copy(alpha = 0.8f),
+                color = Color(0xFF1E293B),
                 shape = RoundedCornerShape(10.dp),
-                border = androidx.compose.foundation.BorderStroke(
-                    1.dp,
-                    if (isParkinsonAutoHold) Color(0xFF00E5FF) else Color(0xFF334155)
-                )
+                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155)),
+                modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(
+                    modifier = Modifier.padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "🦾 HỖ TRỢ BỆNH NHÂN PARKINSON",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isParkinsonAutoHold) Color(0xFF00E5FF) else Color.White
-                                )
-                            }
                             Text(
-                                text = "Quét trục ngang X & tự động đè ghìm vuốt màn hình (Auto Drag-Hold)",
+                                text = "4. HỖ TRỢ BỆNH NHÂN PARKINSON & LIỆT NGÓN",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFBBF24)
+                            )
+                            Text(
+                                text = "Quét dải ngang $scanStripHeight px, nhận diện thực thể vi khuẩn hình trụ & tự động vuốt đè giữ",
                                 fontSize = 10.sp,
                                 color = Color(0xFF94A3B8)
                             )
                         }
                         Switch(
-                            checked = isParkinsonAutoHold,
+                            checked = isTrackingEnabled,
                             onCheckedChange = { checked ->
-                                DetectionState.isParkinsonAutoHoldEnabled = checked
+                                DetectionState.isHumanoidTrackingEnabled = checked
                             },
                             enabled = !isRunning
                         )
                     }
 
-                    if (isParkinsonAutoHold) {
+                    if (isTrackingEnabled) {
                         Text(
-                            text = "• Thao tác đè ghìm: Khi xác nhận đỏ, máy tự động đè giữ màn hình và vuốt ngang theo trục X (quãng đường ΔX) liên tục trong suốt $holdDurationText ms rồi mới nhả.\n• Quét trục X: Tự động né tránh các cột Green/Scanning khi tay bệnh nhân bị run.",
+                            text = "TỌA ĐỘ BẮT ĐẦU VUỐT CAMERA (SWIPE START X, Y):",
                             fontSize = 10.sp,
-                            color = Color(0xFFCBD5E1),
-                            lineHeight = 14.sp
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFFE2E8F0)
                         )
 
-                        // 4.1 Quãng đường vuốt ngang ΔX
-                        Text(
-                            text = "Quãng đường vuốt ngang đè ghìm ΔX (pixels):",
-                            fontSize = 10.sp,
-                            color = Color(0xFF94A3B8)
-                        )
-                        OutlinedTextField(
-                            value = dragDistanceText,
-                            onValueChange = { newText ->
-                                dragDistanceText = newText
-                                newText.toFloatOrNull()?.let { DetectionState.horizontalDragDistanceX = it }
-                            },
-                            label = { Text("Quãng đường vuốt ngang ΔX (px)", fontSize = 11.sp) },
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            enabled = !isRunning,
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedBorderColor = Color(0xFF00E5FF),
-                                unfocusedBorderColor = Color(0xFF475569)
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = swipeStartXText,
+                                onValueChange = { newText ->
+                                    swipeStartXText = newText
+                                    newText.toFloatOrNull()?.let { DetectionState.swipeStartX = it }
+                                },
+                                label = { Text("Swipe Start X", fontSize = 10.sp) },
+                                modifier = Modifier.weight(1f),
+                                enabled = !isRunning,
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = Color(0xFFFBBF24),
+                                    unfocusedBorderColor = Color(0xFF475569)
+                                )
                             )
-                        )
 
+                            OutlinedTextField(
+                                value = swipeStartYText,
+                                onValueChange = { newText ->
+                                    swipeStartYText = newText
+                                    newText.toFloatOrNull()?.let { DetectionState.swipeStartY = it }
+                                },
+                                label = { Text("Swipe Start Y", fontSize = 10.sp) },
+                                modifier = Modifier.weight(1f),
+                                enabled = !isRunning,
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedBorderColor = Color(0xFFFBBF24),
+                                    unfocusedBorderColor = Color(0xFF475569)
+                                )
+                            )
+                        }
+
+                        // Presets for Swipe Start
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            listOf(40f, 80f, 120f, 160f).forEach { px ->
-                                val isSelected = (dragDistanceX == px)
-                                Surface(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable(enabled = !isRunning) {
-                                            DetectionState.horizontalDragDistanceX = px
-                                            dragDistanceText = px.toInt().toString()
-                                        },
-                                    color = if (isSelected) Color(0xFF00838F) else Color(0xFF0F172A),
-                                    shape = RoundedCornerShape(6.dp),
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        1.dp,
-                                        if (isSelected) Color(0xFF00E5FF) else Color(0xFF334155)
-                                    )
-                                ) {
-                                    Box(modifier = Modifier.padding(vertical = 5.dp), contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = "${px.toInt()}px",
-                                            fontSize = 10.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isSelected) Color.White else Color(0xFF94A3B8)
-                                        )
-                                    }
-                                }
+                            Surface(
+                                modifier = Modifier
+                                    .clickable(enabled = !isRunning) {
+                                        DetectionState.swipeStartX = DetectionState.DEFAULT_SWIPE_START_X
+                                        DetectionState.swipeStartY = DetectionState.DEFAULT_SWIPE_START_Y
+                                        swipeStartXText = DetectionState.DEFAULT_SWIPE_START_X.toInt().toString()
+                                        swipeStartYText = DetectionState.DEFAULT_SWIPE_START_Y.toInt().toString()
+                                    },
+                                color = Color(0xFF0F172A),
+                                shape = RoundedCornerShape(6.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569))
+                            ) {
+                                Text(
+                                    text = "Vùng phải (${DetectionState.DEFAULT_SWIPE_START_X.toInt()}, ${DetectionState.DEFAULT_SWIPE_START_Y.toInt()})",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFFFBBF24),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+
+                            Surface(
+                                modifier = Modifier
+                                    .clickable(enabled = !isRunning) {
+                                        DetectionState.swipeStartX = 800f
+                                        DetectionState.swipeStartY = 450f
+                                        swipeStartXText = "800"
+                                        swipeStartYText = "450"
+                                    },
+                                color = Color(0xFF0F172A),
+                                shape = RoundedCornerShape(6.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569))
+                            ) {
+                                Text(
+                                    text = "Vùng giữa (800, 450)",
+                                    fontSize = 10.sp,
+                                    color = Color(0xFF94A3B8),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
                             }
                         }
 
-                        // 4.2 Hướng đè ghìm vuốt trục ngang
                         Text(
-                            text = "Hướng đè ghìm vuốt trục ngang:",
+                            text = "💡 Tự động phân biệt vùng tĩnh với thực thể di động nhanh, vuốt đưa tâm ngắm vào thân thực thể và tự động đè giữ trong thời gian hold.",
                             fontSize = 10.sp,
-                            color = Color(0xFF94A3B8)
+                            color = Color(0xFF64748B)
                         )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            DragDirection.entries.forEach { dir ->
-                                val isSelected = (dragDirection == dir)
-                                Surface(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable(enabled = !isRunning) {
-                                            DetectionState.horizontalDragDirection = dir
-                                        },
-                                    color = if (isSelected) Color(0xFF00838F) else Color(0xFF0F172A),
-                                    shape = RoundedCornerShape(6.dp),
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        1.dp,
-                                        if (isSelected) Color(0xFF00E5FF) else Color(0xFF334155)
-                                    )
-                                ) {
-                                    Box(modifier = Modifier.padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
-                                        Text(
-                                            text = dir.symbol + " " + when(dir) {
-                                                DragDirection.LEFT_TO_RIGHT -> "Phải"
-                                                DragDirection.RIGHT_TO_LEFT -> "Trái"
-                                                DragDirection.AUTO_TRACK -> "Auto"
-                                                DragDirection.SWEEP_BIDIRECTIONAL -> "Lắc 2C"
-                                            },
-                                            fontSize = 9.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isSelected) Color.White else Color(0xFF94A3B8)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-
-                        // 4.3 Phạm vi quét ngang X
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Phạm vi quét ngang X:",
-                                fontSize = 10.sp,
-                                color = Color(0xFF94A3B8)
-                            )
-                            Text(
-                                text = "±$scanRangeX px",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF00E5FF),
-                                fontFamily = FontFamily.Monospace
-                            )
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            listOf(20, 30, 45, 60).forEach { px ->
-                                val isSelected = (scanRangeX == px)
-                                Surface(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clickable(enabled = !isRunning) {
-                                            DetectionState.horizontalScanRangeX = px
-                                        },
-                                    color = if (isSelected) Color(0xFF00838F) else Color(0xFF0F172A),
-                                    shape = RoundedCornerShape(6.dp),
-                                    border = androidx.compose.foundation.BorderStroke(
-                                        1.dp,
-                                        if (isSelected) Color(0xFF00E5FF) else Color(0xFF334155)
-                                    )
-                                ) {
-                                    Box(
-                                        modifier = Modifier.padding(vertical = 5.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = "±${px}px",
-                                            fontSize = 10.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isSelected) Color.White else Color(0xFF94A3B8)
-                                        )
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -1828,7 +1753,6 @@ fun SimulationCard(
     onHideOverlay: () -> Unit,
     onSimulateStatus: (DetectionResult, Int, Int, Int, Int, Int, Int, String) -> Unit
 ) {
-    val context = LocalContext.current
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(14.dp),
@@ -1890,7 +1814,7 @@ fun SimulationCard(
                         DetectionState.TAP_Y
                     )
                     if (!dispatched) {
-                        Toast.makeText(context, "Chưa bật Accessibility Service trong Cài đặt", Toast.LENGTH_SHORT).show()
+                        // Service not connected
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
@@ -1902,38 +1826,6 @@ fun SimulationCard(
                 Text(
                     "⚡ TEST PHẢN XẠ MOTOR TAP (${tapX.toInt()}, ${tapY.toInt()})",
                     color = Color(0xFF38BDF8),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 12.sp
-                )
-            }
-
-            val dragDistanceX by DetectionState.horizontalDragDistanceXFlow.collectAsStateWithLifecycle()
-            val dragDir by DetectionState.horizontalDragDirectionFlow.collectAsStateWithLifecycle()
-
-            // Test Horizontal Drag Hold (Thao tác đè ghìm vuốt trục ngang)
-            OutlinedButton(
-                onClick = {
-                    onShowOverlay()
-                    val dispatched = NeuralAccessibilityService.dispatchHold(
-                        x = DetectionState.TAP_X,
-                        y = DetectionState.TAP_Y,
-                        holdDurationMs = DetectionState.holdConfirmationDurationMs,
-                        dragDistanceX = DetectionState.horizontalDragDistanceX,
-                        dragDirection = DetectionState.horizontalDragDirection
-                    )
-                    if (!dispatched) {
-                        Toast.makeText(context, "Chưa bật Accessibility Service trong Cài đặt", Toast.LENGTH_SHORT).show()
-                    }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = Color(0xFF00E5FF).copy(alpha = 0.15f)
-                ),
-                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF00E5FF))
-            ) {
-                Text(
-                    "🦾 TEST THAO TÁC ĐÈ GHÌM VUỐT NGANG (${dragDir.symbol} ${dragDistanceX.toInt()}px, ${holdDuration}ms)",
-                    color = Color(0xFF00E5FF),
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp
                 )
@@ -2001,6 +1893,49 @@ fun SimulationCard(
                 Text(
                     if (isSimulatingHold) "⏳ ĐANG GIỮ TÂM ĐỎ..." else "🎯 TEST GIỮ TÂM ĐỎ CHUẨN (${holdDuration}ms) -> KÍCH HOẠT TAP",
                     color = Color(0xFF34D399),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp
+                )
+            }
+
+            // Test Parkinson Assist: Swipe steering + hold
+            OutlinedButton(
+                onClick = {
+                    onShowOverlay()
+                    scope.launch {
+                        // 1. Simulate finding moving humanoid entity at X = 1150
+                        DetectionState.lastTrackedClusterX = 1150
+                        // 2. Perform assisted swipe steering from swipeStartX
+                        NeuralAccessibilityService.dispatchSwipe(
+                            startX = DetectionState.swipeStartX,
+                            startY = DetectionState.swipeStartY,
+                            endX = (DetectionState.swipeStartX - 150f).coerceAtLeast(100f),
+                            endY = DetectionState.swipeStartY,
+                            durationMs = 80L
+                        )
+                        kotlinx.coroutines.delay(100L)
+                        // 3. Entity successfully centered -> Crosshair turns RED!
+                        isSimulatingHold = true
+                        val targetMs = (holdDuration + 50L).coerceAtLeast(100L)
+                        val start = System.currentTimeMillis()
+                        while (System.currentTimeMillis() - start <= targetMs) {
+                            val elapsed = System.currentTimeMillis() - start
+                            onSimulateStatus(DetectionResult.RED, 235, 15, 15, 190, 0, 12, "Đang đè giữ thực thể ($elapsed ms)")
+                            kotlinx.coroutines.delay(35L)
+                        }
+                        isSimulatingHold = false
+                    }
+                },
+                enabled = !isSimulatingHold,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = Color(0xFFF59E0B).copy(alpha = 0.12f)
+                ),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFF59E0B))
+            ) {
+                Text(
+                    "🧬 TEST VUỐT BẮT THỰC THỂ & ĐÈ GIỮ (PARKINSON ASSIST)",
+                    color = Color(0xFFFBBF24),
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp
                 )

@@ -247,6 +247,122 @@ class ScreenCaptureService : Service() {
                (g >= 160 && r <= 110 && b <= 130)
     }
 
+    private var prevStripLuminance: FloatArray? = null
+    private var isSwipeGestureInProgress = false
+    private var lastSwipeTime = 0L
+    private var isGripHoldActive = false
+
+    /**
+     * Scans horizontal strip (X = 0..imgWidth, Y = 50px around crosshair)
+     * Detects dynamic moving humanoid/cylindrical entities, filtering out static background.
+     * Returns centroid X of nearest moving humanoid entity, or -1 if none found.
+     */
+    private fun detectDynamicHumanoidCluster(
+        buffer: java.nio.ByteBuffer,
+        rowStride: Int,
+        pixelStride: Int,
+        imgWidth: Int,
+        imgHeight: Int,
+        targetCenterY: Int,
+        targetCenterX: Int
+    ): Int {
+        val stripHeight = DetectionState.scanStripHeight.coerceIn(20, 100)
+        val halfHeight = stripHeight / 2
+        val startY = (targetCenterY - halfHeight).coerceIn(0, imgHeight - stripHeight)
+        val endY = startY + stripHeight - 1
+
+        val colStep = 4 // Sample every 4 pixels across X for high 30+ FPS speed
+        val numCols = imgWidth / colStep
+        val currentLuminance = FloatArray(numCols)
+
+        // 5 vertical samples per column across the 50px height
+        val sampleOffsetsY = intArrayOf(
+            startY,
+            startY + stripHeight / 4,
+            startY + stripHeight / 2,
+            startY + 3 * stripHeight / 4,
+            endY
+        )
+
+        for (c in 0 until numCols) {
+            val x = c * colStep
+            var sumLum = 0f
+            for (sy in sampleOffsetsY) {
+                val offset = sy * rowStride + x * pixelStride
+                if (offset + 2 < buffer.capacity()) {
+                    val r = buffer.get(offset).toInt() and 0xFF
+                    val g = buffer.get(offset + 1).toInt() and 0xFF
+                    val b = buffer.get(offset + 2).toInt() and 0xFF
+                    sumLum += (0.299f * r + 0.587f * g + 0.114f * b)
+                }
+            }
+            currentLuminance[c] = sumLum / sampleOffsetsY.size
+        }
+
+        val prevLum = prevStripLuminance
+        prevStripLuminance = currentLuminance
+
+        if (prevLum == null || prevLum.size != numCols) {
+            return -1 // Need at least 2 frames for motion delta
+        }
+
+        // Detect moving columns (Temporal Motion Filter)
+        val isMoving = BooleanArray(numCols)
+        var totalMovingCols = 0
+        for (c in 0 until numCols) {
+            val delta = kotlin.math.abs(currentLuminance[c] - prevLum[c])
+            // Moving threshold: filters out static background (rocks, ground, walls where delta ~ 0)
+            if (delta >= 16f) {
+                isMoving[c] = true
+                totalMovingCols++
+            }
+        }
+
+        // If whole screen is moving (camera panning), discard to avoid false full-screen trigger
+        if (totalMovingCols > numCols * 0.45f) {
+            return -1
+        }
+
+        // Find connected clusters of moving columns (Humanoid / Cylinder aspect ratio)
+        var bestClusterCenter = -1
+        var minDistanceToCenter = Int.MAX_VALUE
+
+        var clusterStart = -1
+        for (c in 0 until numCols) {
+            if (isMoving[c]) {
+                if (clusterStart == -1) clusterStart = c
+            } else {
+                if (clusterStart != -1) {
+                    val clusterWidthPx = (c - clusterStart) * colStep
+                    // Humanoid / cylindrical silhouette: width typically between 12px and 95px
+                    if (clusterWidthPx in 12..95) {
+                        val clusterCenterX = ((clusterStart + c) / 2) * colStep
+                        val dist = kotlin.math.abs(clusterCenterX - targetCenterX)
+                        if (dist < minDistanceToCenter) {
+                            minDistanceToCenter = dist
+                            bestClusterCenter = clusterCenterX
+                        }
+                    }
+                    clusterStart = -1
+                }
+            }
+        }
+
+        // Check end of array
+        if (clusterStart != -1) {
+            val clusterWidthPx = (numCols - clusterStart) * colStep
+            if (clusterWidthPx in 12..95) {
+                val clusterCenterX = ((clusterStart + numCols) / 2) * colStep
+                val dist = kotlin.math.abs(clusterCenterX - targetCenterX)
+                if (dist < minDistanceToCenter) {
+                    bestClusterCenter = clusterCenterX
+                }
+            }
+        }
+
+        return bestClusterCenter
+    }
+
     private fun startCaptureLoop() {
         captureLoopJob?.cancel()
         captureLoopJob = serviceScope.launch {
@@ -344,67 +460,13 @@ class ScreenCaptureService : Service() {
                                     }
                                 }
 
-                                // Parkinson tremor horizontal X-scan algorithm:
-                                // Scans across X-axis around the crosshair to lock onto the RED target cluster
-                                // even when tremors horizontally shift the sensor into scanning/green borders.
-                                val isParkinsonMode = DetectionState.isParkinsonAutoHoldEnabled
-                                val scanRangeX = DetectionState.horizontalScanRangeX
-                                val xScanMin = (targetCenterX - scanRangeX).coerceIn(0, imgWidth - 1)
-                                val xScanMax = (targetCenterX + scanRangeX).coerceIn(0, imgWidth - 1)
-                                val yScanMin = (targetCenterY - 8).coerceIn(0, imgHeight - 1)
-                                val yScanMax = (targetCenterY + 8).coerceIn(0, imgHeight - 1)
-
-                                var bestRedCol = -1
-                                var maxRedColCount = 0
-                                var redClusterStartX = -1
-                                var redClusterEndX = -1
-                                var inRedCluster = false
-                                var horizontalRedTotal = 0
-
-                                for (x in xScanMin..xScanMax) {
-                                    var colRed = 0
-                                    var colGreen = 0
-                                    for (y in yScanMin..yScanMax) {
-                                        val pixelIndex = y * rowStride + x * pixelStride
-                                        if (pixelIndex + 2 < buffer.capacity()) {
-                                            val r = buffer.get(pixelIndex).toInt() and 0xFF
-                                            val g = buffer.get(pixelIndex + 1).toInt() and 0xFF
-                                            val b = buffer.get(pixelIndex + 2).toInt() and 0xFF
-                                            if (isRedColor(r, g, b)) colRed++
-                                            else if (isGreenColor(r, g, b)) colGreen++
-                                        }
-                                    }
-                                    horizontalRedTotal += colRed
-                                    // Column verified as RED and avoiding Green/Scanning interference
-                                    if (colRed >= 2 && colRed > colGreen) {
-                                        if (!inRedCluster) {
-                                            inRedCluster = true
-                                            if (redClusterStartX == -1) redClusterStartX = x
-                                        }
-                                        redClusterEndX = x
-                                        if (colRed > maxRedColCount) {
-                                            maxRedColCount = colRed
-                                            bestRedCol = x
-                                        }
-                                    } else {
-                                        inRedCluster = false
-                                    }
-                                }
-
-                                val hasHorizontalRedTarget = (redClusterStartX != -1 && redClusterEndX != -1 && horizontalRedTotal >= 4)
-                                val horizontalXOffset = if (bestRedCol != -1) bestRedCol - targetCenterX else 0
-                                val horizontalRedWidth = if (redClusterStartX != -1 && redClusterEndX != -1) redClusterEndX - redClusterStartX + 1 else 0
-
                                 // Smart Hierarchical Classification:
                                 // 1. Priority 1 (Center Core Priority):
+                                // If the center crosshair or inner core (radius <= 3) is RED,
+                                // immediately trigger RED even if the outer ROI contains green foliage/grass!
                                 var triggerReason = "Scanning"
                                 val result = if (centerPriority && (centerIsRed || innerRedPixels >= 2)) {
                                     triggerReason = if (centerIsRed) "Center Pixel Red" else "Core Red ($innerRedPixels px)"
-                                    DetectionResult.RED
-                                } else if (isParkinsonMode && hasHorizontalRedTarget) {
-                                    // Parkinson tremor compensation: horizontal X scan detected the locked RED target,
-                                    // avoiding the non-red/green peripheral columns!
-                                    triggerReason = "Parkinson X-Scan Red (Offset: ${horizontalXOffset}px, Span: ${horizontalRedWidth}px)"
                                     DetectionResult.RED
                                 } else if (centerPriority && (centerIsGreen || innerGreenPixels >= 2)) {
                                     triggerReason = if (centerIsGreen) "Center Pixel Green" else "Core Green ($innerGreenPixels px)"
@@ -428,36 +490,77 @@ class ScreenCaptureService : Service() {
                                     }
                                 }
 
+                                // Parkinson Motor Assistance: Horizontal Scan Strip (X = max, Y = 50px) & Assisted Swipe
+                                if (DetectionState.isHumanoidTrackingEnabled && NeuralAccessibilityService.isServiceConnected()) {
+                                    val movingHumanoidX = detectDynamicHumanoidCluster(
+                                        buffer = buffer,
+                                        rowStride = rowStride,
+                                        pixelStride = pixelStride,
+                                        imgWidth = imgWidth,
+                                        imgHeight = imgHeight,
+                                        targetCenterY = targetCenterY,
+                                        targetCenterX = targetCenterX
+                                    )
+                                    DetectionState.lastTrackedClusterX = movingHumanoidX
+
+                                    val nowSwipe = System.currentTimeMillis()
+
+                                    if (result != DetectionResult.RED && movingHumanoidX >= 0) {
+                                        // Target not locked on red yet: calculate angular error and perform fast assistive swipe!
+                                        val errX = movingHumanoidX - targetCenterX
+                                        if (kotlin.math.abs(errX) >= 15 && (nowSwipe - lastSwipeTime >= 85L) && !isSwipeGestureInProgress) {
+                                            isSwipeGestureInProgress = true
+                                            lastSwipeTime = nowSwipe
+                                            val sensitivity = DetectionState.trackingSensitivity
+                                            val deltaXDrag = (-errX * sensitivity).coerceIn(-380f, 380f)
+
+                                            val sX = DetectionState.swipeStartX
+                                            val sY = DetectionState.swipeStartY
+                                            val eX = (sX + deltaXDrag).coerceIn(80f, (imgWidth - 80).toFloat())
+
+                                            NeuralAccessibilityService.dispatchSwipe(
+                                                startX = sX,
+                                                startY = sY,
+                                                endX = eX,
+                                                endY = sY,
+                                                durationMs = 70L,
+                                                onCompleted = {
+                                                    isSwipeGestureInProgress = false
+                                                }
+                                            )
+                                        }
+                                    } else if (result == DetectionResult.RED) {
+                                        // Target acquired on RED!
+                                        // Parkinson Assist: Grip Hold assistance during confirmation window
+                                        if (!isGripHoldActive && DetectionState.holdConfirmationDurationMs > 0) {
+                                            isGripHoldActive = true
+                                            NeuralAccessibilityService.dispatchHold(
+                                                x = DetectionState.swipeStartX,
+                                                y = DetectionState.swipeStartY,
+                                                durationMs = DetectionState.holdConfirmationDurationMs,
+                                                onCompleted = {
+                                                    isGripHoldActive = false
+                                                }
+                                            )
+                                        }
+                                    } else {
+                                        isGripHoldActive = false
+                                    }
+                                }
+
                                 // Artificial Neural Reflex layer (Hospital patient monitor edge-trigger):
                                 val detectionTimestamp = System.currentTimeMillis()
                                 val reflexDecision = neuralReflex.process(result, detectionTimestamp)
 
                                 if (reflexDecision == ReflexDecision.REFLEX_TAP && DetectionState.isMotorReflexEnabled) {
-                                    if (DetectionState.isParkinsonAutoHoldEnabled) {
-                                        // Automated sustained press-and-drag (đè ghìm vuốt trục ngang) for Parkinson's patients
-                                        NeuralAccessibilityService.dispatchHold(
-                                            x = DetectionState.TAP_X,
-                                            y = DetectionState.TAP_Y,
-                                            holdDurationMs = DetectionState.holdConfirmationDurationMs,
-                                            dragDistanceX = DetectionState.horizontalDragDistanceX,
-                                            dragDirection = DetectionState.horizontalDragDirection,
-                                            horizontalScanRedOffset = horizontalXOffset,
-                                            detectionTimestamp = detectionTimestamp,
-                                            onLatencyMeasured = { latencyMs ->
-                                                neuralReflex.recordLatency(latencyMs)
-                                            }
-                                        )
-                                    } else {
-                                        // Standard momentary tap gesture (40ms)
-                                        NeuralAccessibilityService.dispatchTap(
-                                            x = DetectionState.TAP_X,
-                                            y = DetectionState.TAP_Y,
-                                            detectionTimestamp = detectionTimestamp,
-                                            onLatencyMeasured = { latencyMs ->
-                                                neuralReflex.recordLatency(latencyMs)
-                                            }
-                                        )
-                                    }
+                                    NeuralAccessibilityService.dispatchTap(
+                                        x = DetectionState.TAP_X,
+                                        y = DetectionState.TAP_Y,
+                                        detectionTimestamp = detectionTimestamp,
+                                        onLatencyMeasured = { latencyMs ->
+                                            neuralReflex.recordLatency(latencyMs)
+                                        }
+                                    )
                                 }
 
                                 totalProcessedFrames++
@@ -485,10 +588,7 @@ class ScreenCaptureService : Service() {
                                         fps = currentFps,
                                         frameCount = totalProcessedFrames,
                                         lastUpdateTimeMs = now,
-                                        triggerReason = triggerReason,
-                                        horizontalScanRedOffset = horizontalXOffset,
-                                        horizontalRedWidth = horizontalRedWidth,
-                                        isAutoHolding = DetectionState.isAutoHoldingActive
+                                        triggerReason = triggerReason
                                     )
                                 )
                             }

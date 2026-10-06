@@ -17,16 +17,6 @@ enum class DetectionResult(val label: String, val subtitleText: String, val colo
 }
 
 /**
- * Direction mode for horizontal spray / recoil / Parkinson assist drag (đè ghìm vuốt trục ngang).
- */
-enum class DragDirection(val label: String, val symbol: String) {
-    LEFT_TO_RIGHT("Trái sang Phải (→)", "→"),
-    RIGHT_TO_LEFT("Phải sang Trái (←)", "←"),
-    AUTO_TRACK("Theo cụm đỏ (🎯 Auto)", "🎯"),
-    SWEEP_BIDIRECTIONAL("Lắc hai chiều (⇄ Sweep)", "⇄")
-}
-
-/**
  * Real-time diagnostic statistics with inner-core and weighted detection details.
  */
 data class DetectionMetrics(
@@ -44,10 +34,7 @@ data class DetectionMetrics(
     val fps: Int = 0,
     val frameCount: Long = 0L,
     val lastUpdateTimeMs: Long = 0L,
-    val triggerReason: String = "Idle",
-    val horizontalScanRedOffset: Int = 0,
-    val horizontalRedWidth: Int = 0,
-    val isAutoHolding: Boolean = false
+    val triggerReason: String = "Idle"
 )
 
 /**
@@ -62,6 +49,59 @@ object DetectionState {
     const val DEFAULT_TARGET_X = 801
     const val DEFAULT_TARGET_Y = 359
     const val DEFAULT_HOLD_DURATION_MS = 600L
+
+    // Parkinson Motor Assistance: Horizontal scan strip (X = max, Y = 50px) and assisted swipe tracking
+    const val DEFAULT_SWIPE_START_X = 1200f
+    const val DEFAULT_SWIPE_START_Y = 450f
+    const val DEFAULT_SCAN_STRIP_HEIGHT = 50
+
+    private val _isHumanoidTrackingEnabled = MutableStateFlow(true)
+    val isHumanoidTrackingEnabledFlow: StateFlow<Boolean> = _isHumanoidTrackingEnabled.asStateFlow()
+    var isHumanoidTrackingEnabled: Boolean
+        get() = _isHumanoidTrackingEnabled.value
+        set(value) {
+            _isHumanoidTrackingEnabled.value = value
+        }
+
+    private val _swipeStartX = MutableStateFlow(DEFAULT_SWIPE_START_X)
+    val swipeStartXFlow: StateFlow<Float> = _swipeStartX.asStateFlow()
+    var swipeStartX: Float
+        get() = _swipeStartX.value
+        set(value) {
+            _swipeStartX.value = value
+        }
+
+    private val _swipeStartY = MutableStateFlow(DEFAULT_SWIPE_START_Y)
+    val swipeStartYFlow: StateFlow<Float> = _swipeStartY.asStateFlow()
+    var swipeStartY: Float
+        get() = _swipeStartY.value
+        set(value) {
+            _swipeStartY.value = value
+        }
+
+    private val _scanStripHeight = MutableStateFlow(DEFAULT_SCAN_STRIP_HEIGHT)
+    val scanStripHeightFlow: StateFlow<Int> = _scanStripHeight.asStateFlow()
+    var scanStripHeight: Int
+        get() = _scanStripHeight.value
+        set(value) {
+            _scanStripHeight.value = value.coerceIn(20, 150)
+        }
+
+    private val _trackingSensitivity = MutableStateFlow(1.2f)
+    val trackingSensitivityFlow: StateFlow<Float> = _trackingSensitivity.asStateFlow()
+    var trackingSensitivity: Float
+        get() = _trackingSensitivity.value
+        set(value) {
+            _trackingSensitivity.value = value.coerceIn(0.2f, 3.0f)
+        }
+
+    private val _lastTrackedClusterX = MutableStateFlow(-1)
+    val lastTrackedClusterXFlow: StateFlow<Int> = _lastTrackedClusterX.asStateFlow()
+    var lastTrackedClusterX: Int
+        get() = _lastTrackedClusterX.value
+        set(value) {
+            _lastTrackedClusterX.value = value
+        }
 
     // Sensory input coordinates (Screen color sensor) - Customizable
     private val _targetX = MutableStateFlow(DEFAULT_TARGET_X)
@@ -118,50 +158,6 @@ object DetectionState {
         get() = _holdConfirmationDurationMs.value
         set(value) {
             _holdConfirmationDurationMs.value = value.coerceAtLeast(0L)
-        }
-
-    // Parkinson Assist & Auto-Hold Settings
-    private val _isParkinsonAutoHoldEnabled = MutableStateFlow(true)
-    val isParkinsonAutoHoldEnabledFlow: StateFlow<Boolean> = _isParkinsonAutoHoldEnabled.asStateFlow()
-    var isParkinsonAutoHoldEnabled: Boolean
-        get() = _isParkinsonAutoHoldEnabled.value
-        set(value) {
-            _isParkinsonAutoHoldEnabled.value = value
-        }
-
-    private val _horizontalScanRangeX = MutableStateFlow(30) // Horizontal X-scan width ±30px
-    val horizontalScanRangeXFlow: StateFlow<Int> = _horizontalScanRangeX.asStateFlow()
-    var horizontalScanRangeX: Int
-        get() = _horizontalScanRangeX.value
-        set(value) {
-            _horizontalScanRangeX.value = value.coerceIn(10, 80)
-        }
-
-    // Horizontal drag distance ΔX (pixels) for "đè ghìm vuốt trục ngang"
-    const val DEFAULT_DRAG_DISTANCE_X = 80f
-    private val _horizontalDragDistanceX = MutableStateFlow(DEFAULT_DRAG_DISTANCE_X)
-    val horizontalDragDistanceXFlow: StateFlow<Float> = _horizontalDragDistanceX.asStateFlow()
-    var horizontalDragDistanceX: Float
-        get() = _horizontalDragDistanceX.value
-        set(value) {
-            _horizontalDragDistanceX.value = value.coerceIn(10f, 500f)
-        }
-
-    // Horizontal drag direction mode
-    private val _horizontalDragDirection = MutableStateFlow(DragDirection.LEFT_TO_RIGHT)
-    val horizontalDragDirectionFlow: StateFlow<DragDirection> = _horizontalDragDirection.asStateFlow()
-    var horizontalDragDirection: DragDirection
-        get() = _horizontalDragDirection.value
-        set(value) {
-            _horizontalDragDirection.value = value
-        }
-
-    private val _isAutoHoldingActive = MutableStateFlow(false)
-    val isAutoHoldingActiveFlow: StateFlow<Boolean> = _isAutoHoldingActive.asStateFlow()
-    var isAutoHoldingActive: Boolean
-        get() = _isAutoHoldingActive.value
-        set(value) {
-            _isAutoHoldingActive.value = value
         }
 
     // Neural reflex motor response enable flag & reactive StateFlow
