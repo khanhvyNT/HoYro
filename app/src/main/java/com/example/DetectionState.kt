@@ -213,20 +213,6 @@ object DetectionState {
         get() = _peripheralMotorY.value
         set(value) { _peripheralMotorY.value = value }
 
-    // Bật/tắt cơ chế phản xạ săn bắt vi khuẩn que dọc
-    private val _isBacteriumTrackingEnabled = MutableStateFlow(true)
-    val isBacteriumTrackingEnabledFlow: StateFlow<Boolean> = _isBacteriumTrackingEnabled.asStateFlow()
-    var isBacteriumTrackingEnabled: Boolean
-        get() = _isBacteriumTrackingEnabled.value
-        set(value) { _isBacteriumTrackingEnabled.value = value }
-
-    // Hệ số độ nhạy vuốt bám đuổi (Tracking Sensitivity Gain: 0.5f - 2.5f)
-    private val _trackingSensitivity = MutableStateFlow(1.0f)
-    val trackingSensitivityFlow: StateFlow<Float> = _trackingSensitivity.asStateFlow()
-    var trackingSensitivity: Float
-        get() = _trackingSensitivity.value
-        set(value) { _trackingSensitivity.value = value.coerceIn(0.2f, 3.0f) }
-
     // Cơ chế vuốt Y + 20 sau khi tap để tránh tâm nháy đỏ gây loạn phản xạ do nhiễu
     private val _isPostTapSwipeEnabled = MutableStateFlow(true)
     val isPostTapSwipeEnabledFlow: StateFlow<Boolean> = _isPostTapSwipeEnabled.asStateFlow()
@@ -246,38 +232,304 @@ object DetectionState {
         get() = _useMotorForPostTapSwipe.value
         set(value) { _useMotorForPostTapSwipe.value = value }
 
-    // Trạng thái theo dõi vi khuẩn thời gian thực
-    private val _bacteriumStatus = MutableStateFlow(BacteriumTrackingStatus())
-    val bacteriumStatusFlow: StateFlow<BacteriumTrackingStatus> = _bacteriumStatus.asStateFlow()
+    // --- HỆ THỐNG MACRO PHẢN XẠ NHIỀU ĐIỂM & GHI PHẢN XẠ MẪU (OPPO/XIAOMI GAME TURBO MACRO) ---
+    private val _isMacroModeEnabled = MutableStateFlow(true)
+    val isMacroModeEnabledFlow: StateFlow<Boolean> = _isMacroModeEnabled.asStateFlow()
+    var isMacroModeEnabled: Boolean
+        get() = _isMacroModeEnabled.value
+        set(value) { _isMacroModeEnabled.value = value }
 
-    fun updateBacteriumStatus(status: BacteriumTrackingStatus) {
-        _bacteriumStatus.value = status
+    // Danh sách Macro Profiles
+    private val _macroProfiles = MutableStateFlow(getDefaultMacroProfiles())
+    val macroProfilesFlow: StateFlow<List<MacroProfile>> = _macroProfiles.asStateFlow()
+
+    // Profile đang hoạt động
+    private val _activeProfileId = MutableStateFlow(_macroProfiles.value.first().id)
+    val activeProfileIdFlow: StateFlow<String> = _activeProfileId.asStateFlow()
+    var activeProfileId: String
+        get() = _activeProfileId.value
+        set(value) { _activeProfileId.value = value }
+
+    val activeMacroProfile: MacroProfile
+        get() = _macroProfiles.value.find { it.id == _activeProfileId.value } ?: _macroProfiles.value.first()
+
+    // Trạng thái thực thi Macro thời gian thực
+    private val _macroExecutionStatus = MutableStateFlow(MacroExecutionStatus())
+    val macroExecutionStatusFlow: StateFlow<MacroExecutionStatus> = _macroExecutionStatus.asStateFlow()
+
+    // Trạng thái Ghi phản xạ mẫu từ user
+    private val _macroRecordingState = MutableStateFlow(MacroRecordingState())
+    val macroRecordingStateFlow: StateFlow<MacroRecordingState> = _macroRecordingState.asStateFlow()
+
+    fun updateExecutionStatus(status: MacroExecutionStatus) {
+        _macroExecutionStatus.value = status
+    }
+
+    fun selectProfile(id: String) {
+        _activeProfileId.value = id
+    }
+
+    fun addProfile(profile: MacroProfile) {
+        _macroProfiles.value = _macroProfiles.value + profile
+        _activeProfileId.value = profile.id
+    }
+
+    fun updateProfile(profile: MacroProfile) {
+        _macroProfiles.value = _macroProfiles.value.map { if (it.id == profile.id) profile else it }
+    }
+
+    fun deleteProfile(id: String) {
+        if (_macroProfiles.value.size <= 1) return // Giữ tối thiểu 1 profile
+        val newProfiles = _macroProfiles.value.filter { it.id != id }
+        _macroProfiles.value = newProfiles
+        if (_activeProfileId.value == id) {
+            _activeProfileId.value = newProfiles.first().id
+        }
+    }
+
+    fun addStepToActiveProfile(step: MacroStep) {
+        val current = activeMacroProfile
+        val updated = current.copy(steps = current.steps + step)
+        updateProfile(updated)
+    }
+
+    fun removeStepFromActiveProfile(stepId: String) {
+        val current = activeMacroProfile
+        val updated = current.copy(steps = current.steps.filter { it.id != stepId })
+        updateProfile(updated)
+    }
+
+    fun updateStepInActiveProfile(step: MacroStep) {
+        val current = activeMacroProfile
+        val updated = current.copy(steps = current.steps.map { if (it.id == step.id) step else it })
+        updateProfile(updated)
+    }
+
+    // --- User Recording Workflow ---
+    fun startMacroRecording() {
+        _macroRecordingState.value = MacroRecordingState(
+            isRecording = true,
+            recordedSteps = emptyList(),
+            recordingStartTime = System.currentTimeMillis(),
+            statusMessage = "Đang ghi lại thao tác mẫu từ người dùng... (Chạm hoặc vuốt)"
+        )
+    }
+
+    fun recordAction(step: MacroStep) {
+        val state = _macroRecordingState.value
+        if (!state.isRecording) return
+        val newSteps = state.recordedSteps + step
+        _macroRecordingState.value = state.copy(
+            recordedSteps = newSteps,
+            statusMessage = "Đã ghi ${newSteps.size} bước phản xạ..."
+        )
+    }
+
+    fun stopMacroRecordingAndSave(profileName: String = "Macro Ghi Mẫu ${System.currentTimeMillis() % 1000}") {
+        val state = _macroRecordingState.value
+        if (state.recordedSteps.isNotEmpty()) {
+            val newProfile = MacroProfile(
+                id = java.util.UUID.randomUUID().toString(),
+                name = profileName,
+                description = "Ghi lại từ người dùng gồm ${state.recordedSteps.size} bước phản xạ",
+                steps = state.recordedSteps
+            )
+            addProfile(newProfile)
+        }
+        _macroRecordingState.value = MacroRecordingState(
+            isRecording = false,
+            recordedSteps = emptyList(),
+            statusMessage = "Đã lưu Macro mẫu mới!"
+        )
+    }
+
+    fun cancelMacroRecording() {
+        _macroRecordingState.value = MacroRecordingState(
+            isRecording = false,
+            recordedSteps = emptyList(),
+            statusMessage = "Đã hủy ghi."
+        )
     }
 
     fun reset() {
         neuralReflex.reset()
         _metrics.value = DetectionMetrics()
         _neuralStatus.value = NeuralStatusData()
-        _bacteriumStatus.value = BacteriumTrackingStatus()
+        _macroExecutionStatus.value = MacroExecutionStatus()
     }
 }
 
 /**
- * Trạng thái theo dõi và săn bắt vi khuẩn hình que dọc của hệ thần kinh nhân tạo.
+ * Loại hành động trong chuỗi Macro nhiều điểm.
  */
-data class BacteriumTrackingStatus(
-    val isBacteriumFound: Boolean = false,
-    val bacteriumX: Int = 0,
-    val bacteriumY: Int = 0,
-    val deltaX: Int = 0,
-    val deltaY: Int = 0,
-    val rodConfidence: Float = 0f,
-    val rodHeight: Int = 0,
-    val rodWidth: Int = 0,
-    val isTrackingActive: Boolean = false,
-    val lastSwipeDirection: String = "IDLE", // "LEFT", "RIGHT", "LOCKED ON TARGET", "IDLE"
-    val swipeCount: Long = 0L,
-    val lastSwipeTimestamp: Long = 0L,
-    val statusMessage: String = "Võng mạc đang quan sát vi khuẩn que dọc..."
+enum class MacroActionType(val label: String) {
+    TAP("Chạm (Tap)"),
+    SWIPE("Vuốt (Swipe)")
+}
+
+/**
+ * Một bước hành động trong chuỗi Macro nhiều điểm.
+ */
+data class MacroStep(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val type: MacroActionType = MacroActionType.TAP,
+    val x: Float = 597f,
+    val y: Float = 497f,
+    val endX: Float = 597f,
+    val endY: Float = 517f,
+    val durationMs: Long = 35L,
+    val delayAfterMs: Long = 30L,
+    val label: String = "Điểm thao tác"
 )
+
+/**
+ * Profile cấu hình Macro phản xạ nhiều điểm.
+ */
+data class MacroProfile(
+    val id: String = java.util.UUID.randomUUID().toString(),
+    val name: String = "Macro Bắn + Ghìm Tâm",
+    val description: String = "Tap bắn tại (597, 497) và vuốt ghìm Y + 20 tại (1205, 479)",
+    val steps: List<MacroStep> = listOf(),
+    val isDefault: Boolean = false
+)
+
+/**
+ * Trạng thái thực thi Macro thời gian thực.
+ */
+data class MacroExecutionStatus(
+    val isExecuting: Boolean = false,
+    val activeProfileName: String = "Mặc định",
+    val currentStepIndex: Int = 0,
+    val totalSteps: Int = 0,
+    val totalExecutions: Long = 0L,
+    val lastExecutedTimestamp: Long = 0L,
+    val statusMessage: String = "Sẵn sàng kích hoạt Macro khi phát hiện RED"
+)
+
+/**
+ * Trạng thái tiến trình Ghi Macro từ người dùng.
+ */
+data class MacroRecordingState(
+    val isRecording: Boolean = false,
+    val recordedSteps: List<MacroStep> = emptyList(),
+    val recordingStartTime: Long = 0L,
+    val statusMessage: String = "Chưa ghi"
+)
+
+/**
+ * Các cấu hình Macro mẫu cài sẵn (Preset Macro Profiles).
+ */
+fun getDefaultMacroProfiles(): List<MacroProfile> {
+    return listOf(
+        MacroProfile(
+            id = "preset_recoil",
+            name = "Bắn + Ghìm Tâm (Oppo/Xiaomi Macro)",
+            description = "Tap bắn tại (597, 497) và vuốt ghìm Y + 20 tại (1205, 479)",
+            steps = listOf(
+                MacroStep(
+                    id = "step_1",
+                    type = MacroActionType.TAP,
+                    x = 597f,
+                    y = 497f,
+                    durationMs = 35L,
+                    delayAfterMs = 25L,
+                    label = "Tap Nút Bắn (597, 497)"
+                ),
+                MacroStep(
+                    id = "step_2",
+                    type = MacroActionType.SWIPE,
+                    x = 1205f,
+                    y = 479f,
+                    endX = 1205f,
+                    endY = 499f,
+                    durationMs = 40L,
+                    delayAfterMs = 20L,
+                    label = "Vuốt Ghìm Tâm Y+20 (1205, 479)"
+                )
+            ),
+            isDefault = true
+        ),
+        MacroProfile(
+            id = "preset_burst",
+            name = "Macro 3 Điểm Nhanh (Burst 3-Tap)",
+            description = "Chuỗi tap 3 lần liên tiếp với khoảng nghỉ 35ms",
+            steps = listOf(
+                MacroStep(
+                    id = "burst_1",
+                    type = MacroActionType.TAP,
+                    x = 597f,
+                    y = 497f,
+                    durationMs = 30L,
+                    delayAfterMs = 35L,
+                    label = "Tap Viên 1 (597, 497)"
+                ),
+                MacroStep(
+                    id = "burst_2",
+                    type = MacroActionType.TAP,
+                    x = 597f,
+                    y = 497f,
+                    durationMs = 30L,
+                    delayAfterMs = 35L,
+                    label = "Tap Viên 2 (597, 497)"
+                ),
+                MacroStep(
+                    id = "burst_3",
+                    type = MacroActionType.TAP,
+                    x = 597f,
+                    y = 497f,
+                    durationMs = 30L,
+                    delayAfterMs = 20L,
+                    label = "Tap Viên 3 (597, 497)"
+                ),
+                MacroStep(
+                    id = "burst_recoil",
+                    type = MacroActionType.SWIPE,
+                    x = 1205f,
+                    y = 479f,
+                    endX = 1205f,
+                    endY = 505f,
+                    durationMs = 40L,
+                    delayAfterMs = 20L,
+                    label = "Vuốt Ghìm Tâm Y+26 (1205, 479)"
+                )
+            )
+        ),
+        MacroProfile(
+            id = "preset_jump_shot",
+            name = "Macro Combo Bắn + Ngồi (Crouch Shot)",
+            description = "Tap bắn tại (597, 497) và tap nút ngồi tại (1380, 560)",
+            steps = listOf(
+                MacroStep(
+                    id = "js_1",
+                    type = MacroActionType.TAP,
+                    x = 597f,
+                    y = 497f,
+                    durationMs = 35L,
+                    delayAfterMs = 20L,
+                    label = "Tap Bắn (597, 497)"
+                ),
+                MacroStep(
+                    id = "js_2",
+                    type = MacroActionType.TAP,
+                    x = 1380f,
+                    y = 560f,
+                    durationMs = 35L,
+                    delayAfterMs = 20L,
+                    label = "Tap Ngồi (1380, 560)"
+                ),
+                MacroStep(
+                    id = "js_3",
+                    type = MacroActionType.SWIPE,
+                    x = 1205f,
+                    y = 479f,
+                    endX = 1205f,
+                    endY = 499f,
+                    durationMs = 35L,
+                    delayAfterMs = 20L,
+                    label = "Vuốt Ghìm Tâm Y+20"
+                )
+            )
+        )
+    )
+}
 

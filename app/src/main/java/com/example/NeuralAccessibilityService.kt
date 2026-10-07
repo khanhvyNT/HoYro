@@ -6,16 +6,27 @@ import android.graphics.Path
 import android.os.Build
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 /**
  * NeuralAccessibilityService:
  * Motor response controller for the Artificial Neural Reflex system.
- * Dispatches simulated hardware tap gesture at (597, 497) with minimum possible latency.
+ * Dispatches simulated hardware tap gesture at (597, 497) with minimum possible latency,
+ * and executes multi-point reflex Macro sequences (similar to Oppo Game Space / Xiaomi Game Turbo).
  */
 class NeuralAccessibilityService : AccessibilityService() {
+
+    private val serviceJob = SupervisorJob()
+    private val serviceScope = CoroutineScope(Dispatchers.Default + serviceJob)
+    private var isMacroExecuting = false
 
     companion object {
         private const val TAG = "NEURAL"
@@ -47,7 +58,7 @@ class NeuralAccessibilityService : AccessibilityService() {
 
         /**
          * Dispatches a mechanical swipe gesture from (startX, startY) to (endX, endY)
-         * to mechanically pull the crosshair to track the moving vertical rod bacterium.
+         * to mechanically pull the crosshair to track or recoil compensation.
          */
         fun dispatchSwipe(
             startX: Float = DetectionState.PERIPHERAL_MOTOR_X,
@@ -68,6 +79,24 @@ class NeuralAccessibilityService : AccessibilityService() {
 
             return service.executeSwipe(startX, startY, endX, endY, durationMs, detectionTimestamp, onCompleted)
         }
+
+        /**
+         * Dispatches a multi-point Macro reflex sequence (Oppo Game Space / Xiaomi Game Turbo).
+         */
+        fun dispatchMacro(
+            profile: MacroProfile = DetectionState.activeMacroProfile,
+            detectionTimestamp: Long = System.currentTimeMillis(),
+            onCompleted: (() -> Unit)? = null
+        ): Boolean {
+            val service = instance
+            if (service == null) {
+                if (DetectionState.debugLoggingEnabled) {
+                    Log.w(TAG, "[NEURAL] AccessibilityService not connected for Macro.")
+                }
+                return false
+            }
+            return service.executeMacro(profile, detectionTimestamp, onCompleted)
+        }
     }
 
     override fun onServiceConnected() {
@@ -87,6 +116,7 @@ class NeuralAccessibilityService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        serviceJob.cancel()
         instance = null
         _isServiceActive.value = false
         Log.i(TAG, "[NEURAL] Motor Response Controller destroyed.")
@@ -251,5 +281,111 @@ class NeuralAccessibilityService : AccessibilityService() {
             }
             return false
         }
+    }
+
+    /**
+     * Executes a multi-point Macro reflex sequence asynchronously step-by-step.
+     * Compatible with Oppo Game Space and Xiaomi Game Turbo macro chains.
+     */
+    fun executeMacro(
+        profile: MacroProfile,
+        detectionTimestamp: Long = System.currentTimeMillis(),
+        onCompleted: (() -> Unit)? = null
+    ): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return false
+        if (isMacroExecuting) return false
+        if (profile.steps.isEmpty()) return false
+
+        isMacroExecuting = true
+        serviceScope.launch {
+            try {
+                DetectionState.updateExecutionStatus(
+                    MacroExecutionStatus(
+                        isExecuting = true,
+                        activeProfileName = profile.name,
+                        currentStepIndex = 0,
+                        totalSteps = profile.steps.size,
+                        lastExecutedTimestamp = System.currentTimeMillis(),
+                        statusMessage = "Đang thực thi chuỗi Macro: ${profile.name}"
+                    )
+                )
+
+                profile.steps.forEachIndexed { index, step ->
+                    DetectionState.updateExecutionStatus(
+                        DetectionState.macroExecutionStatusFlow.value.copy(
+                            currentStepIndex = index,
+                            statusMessage = "Bước ${index + 1}/${profile.steps.size}: ${step.label}"
+                        )
+                    )
+
+                    val stepDeferred = CompletableDeferred<Boolean>()
+
+                    val gesture = when (step.type) {
+                        MacroActionType.TAP -> {
+                            val path = Path().apply { moveTo(step.x, step.y) }
+                            GestureDescription.Builder()
+                                .addStroke(GestureDescription.StrokeDescription(path, 0, step.durationMs.coerceIn(15L, 300L)))
+                                .build()
+                        }
+                        MacroActionType.SWIPE -> {
+                            val path = Path().apply {
+                                moveTo(step.x, step.y)
+                                lineTo(step.endX, step.endY)
+                            }
+                            GestureDescription.Builder()
+                                .addStroke(GestureDescription.StrokeDescription(path, 0, step.durationMs.coerceIn(20L, 500L)))
+                                .build()
+                        }
+                    }
+
+                    val dispatched = dispatchGesture(
+                        gesture,
+                        object : GestureResultCallback() {
+                            override fun onCompleted(gestureDescription: GestureDescription?) {
+                                super.onCompleted(gestureDescription)
+                                stepDeferred.complete(true)
+                            }
+
+                            override fun onCancelled(gestureDescription: GestureDescription?) {
+                                super.onCancelled(gestureDescription)
+                                stepDeferred.complete(false)
+                            }
+                        },
+                        null
+                    )
+
+                    if (!dispatched) {
+                        stepDeferred.complete(false)
+                    }
+
+                    stepDeferred.await()
+
+                    if (step.delayAfterMs > 0) {
+                        delay(step.delayAfterMs)
+                    }
+                }
+
+                val currentStatus = DetectionState.macroExecutionStatusFlow.value
+                DetectionState.updateExecutionStatus(
+                    currentStatus.copy(
+                        isExecuting = false,
+                        totalExecutions = currentStatus.totalExecutions + 1,
+                        statusMessage = "Hoàn tất chuỗi Macro (${profile.steps.size} bước) thành công!"
+                    )
+                )
+                onCompleted?.invoke()
+            } catch (e: Exception) {
+                Log.e(TAG, "[NEURAL] Macro execution failed: ${e.message}", e)
+                DetectionState.updateExecutionStatus(
+                    DetectionState.macroExecutionStatusFlow.value.copy(
+                        isExecuting = false,
+                        statusMessage = "Lỗi Macro: ${e.message}"
+                    )
+                )
+            } finally {
+                isMacroExecuting = false
+            }
+        }
+        return true
     }
 }

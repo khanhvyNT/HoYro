@@ -21,6 +21,8 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -80,6 +82,12 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.window.Dialog
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -247,8 +255,8 @@ fun ColorDetectorApp() {
             // Pre-Start Edge Trigger (x, y) & Hold Duration (ms) Configuration Card
             PreStartParametersConfigCard(isRunning = isRunning)
 
-            // Vertical Rod Bacterium Hunting & Mechanical Tracking System Card
-            BacteriumHuntingReflexCard(
+            // Hệ thống Macro Phản xạ Nhiều Điểm (Oppo / Xiaomi Game Turbo)
+            MultiPointMacroReflexCard(
                 isAccessibilityActive = isAccessibilityActive,
                 isRunning = isRunning
             )
@@ -1848,23 +1856,23 @@ fun PreStartParametersConfigCard(isRunning: Boolean) {
 }
 
 @Composable
-fun BacteriumHuntingReflexCard(
+fun MultiPointMacroReflexCard(
     isAccessibilityActive: Boolean,
     isRunning: Boolean
 ) {
-    val isBacteriumEnabled by DetectionState.isBacteriumTrackingEnabledFlow.collectAsStateWithLifecycle()
-    val bacteriumStatus by DetectionState.bacteriumStatusFlow.collectAsStateWithLifecycle()
-    val motorX by DetectionState.peripheralMotorXFlow.collectAsStateWithLifecycle()
-    val motorY by DetectionState.peripheralMotorYFlow.collectAsStateWithLifecycle()
-    val sensitivity by DetectionState.trackingSensitivityFlow.collectAsStateWithLifecycle()
-    val targetX by DetectionState.targetXFlow.collectAsStateWithLifecycle()
-    val targetY by DetectionState.targetYFlow.collectAsStateWithLifecycle()
+    val isMacroEnabled by DetectionState.isMacroModeEnabledFlow.collectAsStateWithLifecycle()
+    val profiles by DetectionState.macroProfilesFlow.collectAsStateWithLifecycle()
+    val activeProfileId by DetectionState.activeProfileIdFlow.collectAsStateWithLifecycle()
+    val macroStatus by DetectionState.macroExecutionStatusFlow.collectAsStateWithLifecycle()
 
-    var motorXText by remember(motorX) { mutableStateOf(motorX.toInt().toString()) }
-    var motorYText by remember(motorY) { mutableStateOf(motorY.toInt().toString()) }
+    val activeProfile = profiles.find { it.id == activeProfileId } ?: profiles.firstOrNull() ?: getDefaultMacroProfiles().first()
 
-    val scope = rememberCoroutineScope()
+    var showAddStepDialog by remember { mutableStateOf(false) }
+    var showCreateProfileDialog by remember { mutableStateOf(false) }
+    var showRecordDialog by remember { mutableStateOf(false) }
     var isTestRunning by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1874,14 +1882,14 @@ fun BacteriumHuntingReflexCard(
         ),
         border = androidx.compose.foundation.BorderStroke(
             1.5.dp,
-            if (bacteriumStatus.isBacteriumFound) Color(0xFFFBBF24) else Color(0xFF334155)
+            if (macroStatus.isExecuting) Color(0xFF38BDF8) else Color(0xFF334155)
         )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             // Header with Switch
             Row(
@@ -1890,271 +1898,284 @@ fun BacteriumHuntingReflexCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "MACRO PHẢN XẠ NHIỀU ĐIỂM",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF38BDF8)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFF0284C7).copy(alpha = 0.25f)
+                        ) {
+                            Text(
+                                text = "OPPO / XIAOMI TURBO",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF38BDF8),
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
                     Text(
-                        text = "SĂN BẮT VI KHUẨN HÌNH QUE DỌC",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFFBBF24)
-                    )
-                    Text(
-                        text = "Võng mạc ($targetX, $targetY) → Cơ quan vận động (${motorX.toInt()}, ${motorY.toInt()})",
+                        text = "Phản xạ chuỗi Chạm / Vuốt đa điểm mẫu khi phát hiện RED",
                         style = MaterialTheme.typography.labelSmall,
                         color = Color(0xFF94A3B8)
                     )
                 }
                 Switch(
-                    checked = isBacteriumEnabled,
-                    onCheckedChange = { DetectionState.isBacteriumTrackingEnabled = it }
+                    checked = isMacroEnabled,
+                    onCheckedChange = { DetectionState.isMacroModeEnabled = it }
                 )
             }
 
-            // Description info banner
+            // Real-time Macro execution HUD
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = Color(0xFF1E293B),
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Text(
-                    text = "🔬 Vi khuẩn que dọc có sắc tố da nhợt/gần trắng ẩn mình trong môi trường nhiễu. Hệ thống liên tục quét võng mạc, phát hiện vector lệch và dùng cơ quan vận động tại (${motorX.toInt()}, ${motorY.toInt()}) phát sinh vuốt cơ học để ghim chặt tâm bám theo mục tiêu đang trôi.",
-                    fontSize = 11.sp,
-                    color = Color(0xFFCBD5E1),
-                    modifier = Modifier.padding(10.dp),
-                    lineHeight = 15.sp
+                color = if (macroStatus.isExecuting) Color(0xFF0C4A6E) else Color(0xFF1E293B),
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    if (macroStatus.isExecuting) Color(0xFF38BDF8) else Color(0xFF334155)
                 )
-            }
-
-            // Live Bacterium Visual & Motor Status
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Bacterium Visual Status
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    color = Color(0xFF1E293B),
-                    shape = RoundedCornerShape(8.dp)
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "THỊ GIÁC VÕNG MẠC",
+                            text = if (macroStatus.isExecuting) "⚡ ĐANG THỰC THI MACRO" else "TRẠNG THÁI MACRO",
                             fontSize = 10.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF94A3B8)
+                            color = if (macroStatus.isExecuting) Color(0xFF7DD3FC) else Color(0xFF94A3B8)
                         )
-                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = if (bacteriumStatus.isBacteriumFound) "TÌM THẤY QUE DỌC" else "ĐANG QUAN SÁT",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Black,
-                            color = if (bacteriumStatus.isBacteriumFound) Color(0xFFFBBF24) else Color.White
-                        )
-                        if (bacteriumStatus.isBacteriumFound) {
-                            Text(
-                                text = "Vị trí: (${bacteriumStatus.bacteriumX}, ${bacteriumStatus.bacteriumY})",
-                                fontSize = 10.sp,
-                                color = Color(0xFF38BDF8)
-                            )
-                            Text(
-                                text = "Lệch: ΔX ${bacteriumStatus.deltaX}px, ΔY ${bacteriumStatus.deltaY}px",
-                                fontSize = 10.sp,
-                                color = Color(0xFFF87171)
-                            )
-                        } else {
-                            Text(
-                                text = "Võng mạc: ($targetX, $targetY)",
-                                fontSize = 10.sp,
-                                color = Color(0xFF64748B)
-                            )
-                        }
-                    }
-                }
-
-                // Peripheral Motor Action
-                Surface(
-                    modifier = Modifier.weight(1f),
-                    color = Color(0xFF1E293B),
-                    shape = RoundedCornerShape(8.dp)
-                ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        Text(
-                            text = "CHI VẬN ĐỘNG NGOẠI BIÊN",
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF94A3B8)
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = bacteriumStatus.lastSwipeDirection,
+                            text = macroStatus.statusMessage,
                             fontSize = 12.sp,
-                            fontWeight = FontWeight.Black,
-                            color = if (bacteriumStatus.lastSwipeDirection.contains("GHIM")) Color(0xFF4ADE80) else Color(0xFF38BDF8)
-                        )
-                        Text(
-                            text = "Đã vuốt: ${bacteriumStatus.swipeCount} lần",
-                            fontSize = 10.sp,
-                            color = Color(0xFFCBD5E1)
-                        )
-                        Text(
-                            text = "Gốc: (${motorX.toInt()}, ${motorY.toInt()})",
-                            fontSize = 10.sp,
-                            color = Color(0xFF64748B)
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (macroStatus.isExecuting) Color.White else Color(0xFFCBD5E1)
                         )
                     }
+                    Text(
+                        text = "Đã chạy: ${macroStatus.totalExecutions}",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFF38BDF8)
+                    )
                 }
             }
 
-            // Real-time tracking message
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = if (bacteriumStatus.isBacteriumFound) Color(0xFF78350F).copy(alpha = 0.4f) else Color(0xFF1E293B),
-                shape = RoundedCornerShape(6.dp),
-                border = androidx.compose.foundation.BorderStroke(1.dp, if (bacteriumStatus.isBacteriumFound) Color(0xFFF59E0B) else Color(0xFF334155))
-            ) {
-                Text(
-                    text = bacteriumStatus.statusMessage,
-                    fontSize = 10.sp,
-                    color = if (bacteriumStatus.isBacteriumFound) Color(0xFFFDE68A) else Color(0xFF94A3B8),
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
-                )
-            }
-
-            // Customizable Peripheral Motor Coordinates (1205, 479)
+            // Profile Tabs
             Text(
-                text = "TỌA ĐỘ ĐIỀU KHIỂN CƠ QUAN VẬN ĐỘNG (MOTOR X, Y):",
-                fontSize = 10.sp,
+                text = "HỒ SƠ MACRO (PROFILES):",
+                fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color(0xFFE2E8F0)
             )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                OutlinedTextField(
-                    value = motorXText,
-                    onValueChange = { newText ->
-                        motorXText = newText
-                        newText.toFloatOrNull()?.let { DetectionState.PERIPHERAL_MOTOR_X = it }
-                    },
-                    label = { Text("Motor X", fontSize = 10.sp) },
-                    modifier = Modifier.weight(1f),
-                    enabled = !isRunning,
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFFFBBF24),
-                        unfocusedBorderColor = Color(0xFF475569)
-                    )
-                )
-
-                OutlinedTextField(
-                    value = motorYText,
-                    onValueChange = { newText ->
-                        motorYText = newText
-                        newText.toFloatOrNull()?.let { DetectionState.PERIPHERAL_MOTOR_Y = it }
-                    },
-                    label = { Text("Motor Y", fontSize = 10.sp) },
-                    modifier = Modifier.weight(1f),
-                    enabled = !isRunning,
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color(0xFFFBBF24),
-                        unfocusedBorderColor = Color(0xFF475569)
-                    )
-                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        profiles.forEach { profile ->
+                            val isSelected = (profile.id == activeProfile.id)
+                            Surface(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clickable {
+                                        DetectionState.selectProfile(profile.id)
+                                    },
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
+                                border = androidx.compose.foundation.BorderStroke(
+                                    1.dp,
+                                    if (isSelected) Color(0xFF38BDF8) else Color(0xFF334155)
+                                )
+                            ) {
+                                Box(
+                                    modifier = Modifier.padding(vertical = 6.dp, horizontal = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = profile.name.take(16),
+                                        fontSize = 10.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) Color.White else Color(0xFF94A3B8),
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
 
                 Surface(
                     modifier = Modifier
-                        .align(Alignment.CenterVertically)
-                        .clickable(enabled = !isRunning) {
-                            DetectionState.PERIPHERAL_MOTOR_X = DetectionState.DEFAULT_PERIPHERAL_MOTOR_X
-                            DetectionState.PERIPHERAL_MOTOR_Y = DetectionState.DEFAULT_PERIPHERAL_MOTOR_Y
-                            motorXText = DetectionState.DEFAULT_PERIPHERAL_MOTOR_X.toInt().toString()
-                            motorYText = DetectionState.DEFAULT_PERIPHERAL_MOTOR_Y.toInt().toString()
-                        },
-                    color = Color(0xFF1E293B),
+                        .size(32.dp)
+                        .clickable { showCreateProfileDialog = true },
                     shape = RoundedCornerShape(6.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF475569))
+                    color = Color(0xFF1E293B),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8))
                 ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text("+", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                    }
+                }
+            }
+
+            Text(
+                text = "📋 ${activeProfile.description}",
+                fontSize = 11.sp,
+                color = Color(0xFF94A3B8)
+            )
+
+            // Step sequence header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "CHUỖI BƯỚC PHẢN XẠ (${activeProfile.steps.size} BƯỚC):",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFFE2E8F0)
+                )
+
+                if (profiles.size > 1 && !activeProfile.isDefault) {
                     Text(
-                        text = "Gốc\n(1205, 479)",
-                        fontSize = 9.sp,
-                        color = Color(0xFFFBBF24),
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)
+                        text = "Xóa Profile này",
+                        fontSize = 10.sp,
+                        color = Color(0xFFEF4444),
+                        modifier = Modifier.clickable {
+                            DetectionState.deleteProfile(activeProfile.id)
+                        }
                     )
                 }
             }
 
-            // Tracking Sensitivity Gain (0.5x, 1.0x, 1.5x, 2.0x)
-            Text(
-                text = "HỆ SỐ ĐỘ NHẠY VUỐT KÉO TÂM (TRACKING SENSITIVITY):",
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color(0xFFE2E8F0)
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                listOf(0.5f to "0.5x", 1.0f to "1.0x Chuẩn", 1.5f to "1.5x Nhanh", 2.0f to "2.0x Cực đại").forEach { (sens, label) ->
-                    val isSelected = (sensitivity == sens)
-                    Surface(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable(enabled = !isRunning) {
-                                DetectionState.trackingSensitivity = sens
-                            },
-                        color = if (isSelected) Color(0xFFD97706) else Color(0xFF1E293B),
-                        shape = RoundedCornerShape(6.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) Color(0xFFFBBF24) else Color(0xFF334155))
-                    ) {
-                        Box(
-                            modifier = Modifier.padding(vertical = 6.dp),
-                            contentAlignment = Alignment.Center
+            // Step list
+            if (activeProfile.steps.isEmpty()) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(6.dp),
+                    color = Color(0xFF1E293B)
+                ) {
+                    Text(
+                        text = "Chưa có bước thao tác nào. Nhấn \"Thêm Điểm Phản Xạ\" hoặc \"Ghi Lại Mẫu\" bên dưới.",
+                        fontSize = 11.sp,
+                        color = Color(0xFF64748B),
+                        modifier = Modifier.padding(12.dp)
+                    )
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    activeProfile.steps.forEachIndexed { index, step ->
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            color = Color(0xFF1E293B),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155))
                         ) {
-                            Text(
-                                text = label,
-                                fontSize = 10.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                color = if (isSelected) Color.White else Color(0xFF94A3B8)
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = Color(0xFF0284C7),
+                                        modifier = Modifier.size(22.dp)
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(
+                                                text = "${index + 1}",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = Color.White
+                                            )
+                                        }
+                                    }
+
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = if (step.type == MacroActionType.TAP) Color(0xFF10B981).copy(alpha = 0.2f) else Color(0xFFF59E0B).copy(alpha = 0.2f)
+                                    ) {
+                                        Text(
+                                            text = if (step.type == MacroActionType.TAP) "👆 TAP" else "↔️ SWIPE",
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (step.type == MacroActionType.TAP) Color(0xFF34D399) else Color(0xFFFBBF24),
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+
+                                    Column {
+                                        Text(
+                                            text = step.label,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = Color.White
+                                        )
+                                        val coordText = if (step.type == MacroActionType.TAP) {
+                                            "Tọa độ: (${step.x.toInt()}, ${step.y.toInt()}) • ${step.durationMs}ms"
+                                        } else {
+                                            "Từ (${step.x.toInt()}, ${step.y.toInt()}) → (${step.endX.toInt()}, ${step.endY.toInt()}) • ${step.durationMs}ms"
+                                        }
+                                        Text(
+                                            text = "$coordText | Nghỉ: ${step.delayAfterMs}ms",
+                                            fontSize = 10.sp,
+                                            color = Color(0xFF94A3B8)
+                                        )
+                                    }
+                                }
+
+                                IconButton(
+                                    onClick = { DetectionState.removeStepFromActiveProfile(step.id) },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Text("✕", fontSize = 12.sp, color = Color(0xFFEF4444), fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            // Manual Motor Test Buttons
+            // Buttons: Add Step & Record User Macro
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedButton(
-                    onClick = {
-                        val startX = DetectionState.PERIPHERAL_MOTOR_X
-                        val startY = DetectionState.PERIPHERAL_MOTOR_Y
-                        NeuralAccessibilityService.dispatchSwipe(
-                            startX = startX,
-                            startY = startY,
-                            endX = startX - 80f,
-                            endY = startY,
-                            durationMs = 50L
-                        )
-                    },
+                    onClick = { showAddStepDialog = true },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = Color(0xFF38BDF8).copy(alpha = 0.12f)
+                        containerColor = Color(0xFF0284C7).copy(alpha = 0.15f)
                     ),
                     border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF38BDF8))
                 ) {
                     Text(
-                        "👈 TEST VUỐT TRÁI",
+                        "➕ THÊM ĐIỂM",
                         fontSize = 10.sp,
                         color = Color(0xFF38BDF8),
                         fontWeight = FontWeight.Bold
@@ -2163,127 +2184,540 @@ fun BacteriumHuntingReflexCard(
 
                 OutlinedButton(
                     onClick = {
-                        val startX = DetectionState.PERIPHERAL_MOTOR_X
-                        val startY = DetectionState.PERIPHERAL_MOTOR_Y
-                        NeuralAccessibilityService.dispatchSwipe(
-                            startX = startX,
-                            startY = startY,
-                            endX = startX + 80f,
-                            endY = startY,
-                            durationMs = 50L
-                        )
+                        DetectionState.startMacroRecording()
+                        showRecordDialog = true
                     },
                     modifier = Modifier.weight(1f),
                     colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = Color(0xFFFBBF24).copy(alpha = 0.12f)
+                        containerColor = Color(0xFFEF4444).copy(alpha = 0.15f)
                     ),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFBBF24))
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444))
                 ) {
                     Text(
-                        "👉 TEST VUỐT PHẢI",
+                        "🔴 GHI MẪU USER",
                         fontSize = 10.sp,
-                        color = Color(0xFFFBBF24),
+                        color = Color(0xFFEF4444),
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
 
-            // Simulation button: Simulate moving bacterium and auto mechanical tracking
+            // Test execute Macro button
             OutlinedButton(
                 onClick = {
                     scope.launch {
                         isTestRunning = true
-                        val motorX = DetectionState.PERIPHERAL_MOTOR_X
-                        val motorY = DetectionState.PERIPHERAL_MOTOR_Y
-
-                        // Step 1: Bacterium at Right (+65px) -> Swipe right to pull center
-                        DetectionState.updateBacteriumStatus(
-                            BacteriumTrackingStatus(
-                                isBacteriumFound = true,
-                                bacteriumX = (targetX + 65),
-                                bacteriumY = targetY,
-                                deltaX = 65,
-                                deltaY = 0,
-                                rodConfidence = 4.2f,
-                                rodHeight = 36,
-                                rodWidth = 14,
-                                isTrackingActive = true,
-                                lastSwipeDirection = "KÉO SANG PHẢI (→)",
-                                swipeCount = DetectionState.bacteriumStatusFlow.value.swipeCount + 1,
-                                lastSwipeTimestamp = System.currentTimeMillis(),
-                                statusMessage = "Vi khuẩn lệch phải (+65px) -> Đang kích hoạt vuốt cơ học kéo sang phải!"
-                            )
+                        val success = NeuralAccessibilityService.dispatchMacro(
+                            profile = activeProfile,
+                            onCompleted = {
+                                isTestRunning = false
+                            }
                         )
-                        NeuralAccessibilityService.dispatchSwipe(
-                            startX = motorX,
-                            startY = motorY,
-                            endX = motorX + 75f,
-                            endY = motorY,
-                            durationMs = 45L
-                        )
-                        kotlinx.coroutines.delay(200L)
-
-                        // Step 2: Bacterium drifts to Left (-45px) -> Swipe left to pull center
-                        DetectionState.updateBacteriumStatus(
-                            BacteriumTrackingStatus(
-                                isBacteriumFound = true,
-                                bacteriumX = (targetX - 45),
-                                bacteriumY = targetY,
-                                deltaX = -45,
-                                deltaY = 0,
-                                rodConfidence = 4.0f,
-                                rodHeight = 34,
-                                rodWidth = 12,
-                                isTrackingActive = true,
-                                lastSwipeDirection = "KÉO SANG TRÁI (←)",
-                                swipeCount = DetectionState.bacteriumStatusFlow.value.swipeCount + 1,
-                                lastSwipeTimestamp = System.currentTimeMillis(),
-                                statusMessage = "Vi khuẩn trôi sang trái (-45px) -> Đang kích hoạt vuốt cơ học kéo sang trái!"
-                            )
-                        )
-                        NeuralAccessibilityService.dispatchSwipe(
-                            startX = motorX,
-                            startY = motorY,
-                            endX = motorX - 60f,
-                            endY = motorY,
-                            durationMs = 45L
-                        )
-                        kotlinx.coroutines.delay(200L)
-
-                        // Step 3: Centered and locked!
-                        DetectionState.updateBacteriumStatus(
-                            BacteriumTrackingStatus(
-                                isBacteriumFound = true,
-                                bacteriumX = targetX,
-                                bacteriumY = targetY,
-                                deltaX = 0,
-                                deltaY = 0,
-                                rodConfidence = 4.8f,
-                                rodHeight = 38,
-                                rodWidth = 14,
-                                isTrackingActive = true,
-                                lastSwipeDirection = "🎯 GHIM CHẶT VÀO TÂM",
-                                swipeCount = DetectionState.bacteriumStatusFlow.value.swipeCount,
-                                lastSwipeTimestamp = System.currentTimeMillis(),
-                                statusMessage = "🎯 ĐÃ GHIM CHẶT TÂM VÀO VÙNG VI KHUẨN QUE DỌC ĐANG BIẾN ĐỘNG!"
-                            )
-                        )
-                        isTestRunning = false
+                        if (!success) {
+                            Toast.makeText(context, "Accessibility Service chưa bật hoặc đang bận!", Toast.LENGTH_SHORT).show()
+                            isTestRunning = false
+                        }
                     }
                 },
                 enabled = !isTestRunning,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = Color(0xFF10B981).copy(alpha = 0.12f)
+                    containerColor = Color(0xFF10B981).copy(alpha = 0.15f)
                 ),
                 border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF10B981))
             ) {
                 Text(
-                    text = if (isTestRunning) "⏳ ĐANG PHẢN XẠ KÉO BÁM ĐUỔI..." else "🎯 TEST MÔ PHỎNG: VI KHUẨN DI CHUYỂN → KÉO CHI BÁM ĐUỔI",
+                    text = if (isTestRunning) "⏳ ĐANG PHẢN XẠ THỰC THI MACRO..." else "⚡ CHẠY THỬ MACRO NGAY (${activeProfile.name})",
                     color = Color(0xFF34D399),
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp
                 )
+            }
+        }
+    }
+
+    if (showAddStepDialog) {
+        AddMacroStepDialog(
+            onDismiss = { showAddStepDialog = false },
+            onAddStep = { step ->
+                DetectionState.addStepToActiveProfile(step)
+                showAddStepDialog = false
+            }
+        )
+    }
+
+    if (showCreateProfileDialog) {
+        CreateMacroProfileDialog(
+            onDismiss = { showCreateProfileDialog = false },
+            onCreate = { name, desc ->
+                val newProfile = MacroProfile(
+                    name = name,
+                    description = desc,
+                    steps = listOf(
+                        MacroStep(
+                            type = MacroActionType.TAP,
+                            x = DetectionState.TAP_X,
+                            y = DetectionState.TAP_Y,
+                            durationMs = 35L,
+                            delayAfterMs = 20L,
+                            label = "Tap Khởi đầu"
+                        )
+                    )
+                )
+                DetectionState.addProfile(newProfile)
+                showCreateProfileDialog = false
+            }
+        )
+    }
+
+    if (showRecordDialog) {
+        RecordUserMacroDialog(
+            onDismiss = {
+                DetectionState.cancelMacroRecording()
+                showRecordDialog = false
+            },
+            onSave = { name ->
+                DetectionState.stopMacroRecordingAndSave(name)
+                showRecordDialog = false
+            }
+        )
+    }
+}
+
+@Composable
+fun AddMacroStepDialog(
+    onDismiss: () -> Unit,
+    onAddStep: (MacroStep) -> Unit
+) {
+    var actionType by remember { mutableStateOf(MacroActionType.TAP) }
+    var xText by remember { mutableStateOf("597") }
+    var yText by remember { mutableStateOf("497") }
+    var endXText by remember { mutableStateOf("1205") }
+    var endYText by remember { mutableStateOf("499") }
+    var durationText by remember { mutableStateOf("35") }
+    var delayText by remember { mutableStateOf("25") }
+    var labelText by remember { mutableStateOf("Thao tác mới") }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF38BDF8))
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "➕ THÊM ĐIỂM THAO TÁC MACRO",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF38BDF8),
+                    fontSize = 13.sp
+                )
+
+                // Select Action Type
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(MacroActionType.TAP to "👆 Chạm (Tap)", MacroActionType.SWIPE to "↔️ Vuốt (Swipe)").forEach { (type, label) ->
+                        val isSelected = (actionType == type)
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable { actionType = type },
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (isSelected) Color(0xFF0284C7) else Color(0xFF1E293B),
+                            border = androidx.compose.foundation.BorderStroke(
+                                1.dp,
+                                if (isSelected) Color(0xFF38BDF8) else Color(0xFF334155)
+                            )
+                        ) {
+                            Box(modifier = Modifier.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = label,
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) Color.White else Color(0xFF94A3B8)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Preset coordinate buttons
+                Text("Vị trí mẫu nhanh:", fontSize = 10.sp, color = Color(0xFF94A3B8))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    listOf(
+                        "Nút Bắn (597, 497)" to Pair(597f, 497f),
+                        "Cơ quan (1205, 479)" to Pair(1205f, 479f),
+                        "Nút Ngồi (1380, 560)" to Pair(1380f, 560f)
+                    ).forEach { (name, coords) ->
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clickable {
+                                    xText = coords.first.toInt().toString()
+                                    yText = coords.second.toInt().toString()
+                                    if (actionType == MacroActionType.SWIPE) {
+                                        endXText = coords.first.toInt().toString()
+                                        endYText = (coords.second + 20).toInt().toString()
+                                    }
+                                },
+                            shape = RoundedCornerShape(4.dp),
+                            color = Color(0xFF1E293B),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155))
+                        ) {
+                            Text(
+                                text = name,
+                                fontSize = 8.sp,
+                                color = Color(0xFF38BDF8),
+                                modifier = Modifier.padding(4.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
+                        }
+                    }
+                }
+
+                // Input coordinates
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = xText,
+                        onValueChange = { xText = it },
+                        label = { Text("Tọa độ X", fontSize = 10.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                    OutlinedTextField(
+                        value = yText,
+                        onValueChange = { yText = it },
+                        label = { Text("Tọa độ Y", fontSize = 10.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
+
+                if (actionType == MacroActionType.SWIPE) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = endXText,
+                            onValueChange = { endXText = it },
+                            label = { Text("Đích đến X", fontSize = 10.sp) },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                        OutlinedTextField(
+                            value = endYText,
+                            onValueChange = { endYText = it },
+                            label = { Text("Đích đến Y", fontSize = 10.sp) },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = durationText,
+                        onValueChange = { durationText = it },
+                        label = { Text("Thời gian (ms)", fontSize = 10.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                    OutlinedTextField(
+                        value = delayText,
+                        onValueChange = { delayText = it },
+                        label = { Text("Nghỉ sau đó (ms)", fontSize = 10.sp) },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                    )
+                }
+
+                OutlinedTextField(
+                    value = labelText,
+                    onValueChange = { labelText = it },
+                    label = { Text("Tên/Mô tả bước", fontSize = 10.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                        Text("HỦY", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                    }
+                    Button(
+                        onClick = {
+                            val x = xText.toFloatOrNull() ?: 597f
+                            val y = yText.toFloatOrNull() ?: 497f
+                            val endX = endXText.toFloatOrNull() ?: x
+                            val endY = endYText.toFloatOrNull() ?: (y + 20f)
+                            val duration = durationText.toLongOrNull() ?: 35L
+                            val delay = delayText.toLongOrNull() ?: 20L
+                            onAddStep(
+                                MacroStep(
+                                    type = actionType,
+                                    x = x,
+                                    y = y,
+                                    endX = endX,
+                                    endY = endY,
+                                    durationMs = duration,
+                                    delayAfterMs = delay,
+                                    label = labelText.ifEmpty { if (actionType == MacroActionType.TAP) "Chạm ($x, $y)" else "Vuốt ($x, $y) -> ($endX, $endY)" }
+                                )
+                            )
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
+                    ) {
+                        Text("THÊM BƯỚC", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CreateMacroProfileDialog(
+    onDismiss: () -> Unit,
+    onCreate: (String, String) -> Unit
+) {
+    var name by remember { mutableStateOf("Macro Mới") }
+    var desc by remember { mutableStateOf("Tùy chỉnh cá nhân") }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFF38BDF8))
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    text = "TẠO HỒ SƠ MACRO MỚI",
+                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF38BDF8),
+                    fontSize = 13.sp
+                )
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Tên Macro", fontSize = 10.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = desc,
+                    onValueChange = { desc = it },
+                    label = { Text("Mô tả tác dụng", fontSize = 10.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(onClick = onDismiss, modifier = Modifier.weight(1f)) {
+                        Text("HỦY", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                    }
+                    Button(
+                        onClick = {
+                            if (name.isNotEmpty()) onCreate(name, desc)
+                        },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0284C7))
+                    ) {
+                        Text("TẠO PROFILES", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RecordUserMacroDialog(
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit
+) {
+    val recordingState by DetectionState.macroRecordingStateFlow.collectAsStateWithLifecycle()
+    var profileName by remember { mutableStateOf("Macro Ghi Mẫu ${System.currentTimeMillis() % 1000}") }
+    var touchStartX by remember { mutableStateOf(0f) }
+    var touchStartY by remember { mutableStateOf(0f) }
+    var touchStartTime by remember { mutableStateOf(0L) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF0F172A)),
+            border = androidx.compose.foundation.BorderStroke(1.5.dp, Color(0xFFEF4444))
+        ) {
+            Column(
+                modifier = Modifier.padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "🔴 GHI PHẢN XẠ MẪU TỪ USER",
+                        fontWeight = FontWeight.Bold,
+                        color = Color(0xFFEF4444),
+                        fontSize = 13.sp
+                    )
+                    Text(
+                        text = "${recordingState.recordedSteps.size} bước",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+
+                Text(
+                    text = "Chạm (Tap) hoặc Vuốt (Swipe) trực tiếp lên vùng cảm ứng bên dưới để ghi lại thao tác mẫu chuẩn xác của bạn:",
+                    fontSize = 11.sp,
+                    color = Color(0xFF94A3B8)
+                )
+
+                // Interactive Touch Canvas Pad
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(180.dp)
+                        .background(Color(0xFF1E293B), RoundedCornerShape(10.dp))
+                        .border(1.5.dp, Color(0xFF334155), RoundedCornerShape(10.dp))
+                        .pointerInput(Unit) {
+                            detectTapGestures(
+                                onPress = { offset ->
+                                    val startX = offset.x
+                                    val startY = offset.y
+                                    val startTime = System.currentTimeMillis()
+                                    tryAwaitRelease()
+                                    val elapsed = (System.currentTimeMillis() - startTime).coerceIn(25L, 300L)
+                                    DetectionState.recordAction(
+                                        MacroStep(
+                                            type = MacroActionType.TAP,
+                                            x = startX,
+                                            y = startY,
+                                            durationMs = elapsed,
+                                            delayAfterMs = 25L,
+                                            label = "Tap (${startX.toInt()}, ${startY.toInt()})"
+                                        )
+                                    )
+                                }
+                            )
+                        }
+                        .pointerInput(Unit) {
+                            detectDragGestures(
+                                onDragStart = { offset ->
+                                    touchStartX = offset.x
+                                    touchStartY = offset.y
+                                    touchStartTime = System.currentTimeMillis()
+                                },
+                                onDragEnd = {
+                                    // Finished drag gesture
+                                }
+                            ) { change, _ ->
+                                change.consume()
+                                val currentX = change.position.x
+                                val currentY = change.position.y
+                                val dx = currentX - touchStartX
+                                val dy = currentY - touchStartY
+                                val distSq = dx * dx + dy * dy
+                                if (distSq > 400f) {
+                                    val elapsed = (System.currentTimeMillis() - touchStartTime).coerceIn(30L, 400L)
+                                    DetectionState.recordAction(
+                                        MacroStep(
+                                            type = MacroActionType.SWIPE,
+                                            x = touchStartX,
+                                            y = touchStartY,
+                                            endX = currentX,
+                                            endY = currentY,
+                                            durationMs = elapsed,
+                                            delayAfterMs = 25L,
+                                            label = "Vuốt (${touchStartX.toInt()}, ${touchStartY.toInt()}) → (${currentX.toInt()}, ${currentY.toInt()})"
+                                        )
+                                    )
+                                    touchStartX = currentX
+                                    touchStartY = currentY
+                                }
+                            }
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("🎮 VÙNG CẢM ỨNG GHI MẪU", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color(0xFF38BDF8))
+                        Text("Chạm hoặc Vuốt tại đây", fontSize = 10.sp, color = Color(0xFF64748B))
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = if (recordingState.recordedSteps.isEmpty()) "Chưa có thao tác nào" else "Đã ghi ${recordingState.recordedSteps.size} bước phản xạ",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF4ADE80)
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = profileName,
+                    onValueChange = { profileName = it },
+                    label = { Text("Tên Macro", fontSize = 10.sp) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("HỦY", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                    }
+                    Button(
+                        onClick = { onSave(profileName) },
+                        modifier = Modifier.weight(1f),
+                        enabled = recordingState.recordedSteps.isNotEmpty(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                    ) {
+                        Text("💾 LƯU MACRO", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                    }
+                }
             }
         }
     }

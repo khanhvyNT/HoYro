@@ -301,166 +301,6 @@ class ScreenCaptureService : Service() {
                (g >= 160 && r <= 110 && b <= 130)
     }
 
-    /**
-     * Nhận diện sắc tố "màu da nhợt, gần trắng" của vi khuẩn hình que dọc:
-     * - Bắt buộc phải có sắc ấm da tự nhiên: R > G > B (R - B >= 24, R - G >= 8)
-     * - Loại trừ hoàn toàn dải màu trắng xanh (isBluishWhiteOrCyan)
-     * - Loại trừ hoàn toàn tâm màu cam / vàng cam (isOrangeOrYellowOrange)
-     */
-    private fun isPaleNearWhiteColor(r: Int, g: Int, b: Int): Boolean {
-        // Loại trừ tuyệt đối dải màu trắng xanh và tâm màu cam - vàng cam
-        if (isBluishWhiteOrCyan(r, g, b)) return false
-        if (isOrangeOrYellowOrange(r, g, b)) return false
-
-        if (r < 140 || g < 115 || b < 85) return false
-        val lum = (r * 299 + g * 587 + b * 114) / 1000
-        if (lum < 125) return false
-
-        // Sắc ấm đặc trưng của màu da nhợt (R phải cao hơn B rõ rệt, và R cao hơn G)
-        val rMinusB = r - b
-        val rMinusG = r - g
-        if (rMinusB < 24) return false // Chặn triệt để màu trắng xanh hoặc xám lạnh
-        if (rMinusG < 8) return false  // Chặn màu vàng chanh hoặc trắng xanh
-
-        // Loại bỏ màu xanh lá rực (cỏ/cây)
-        if (g > r + 15 || g > b + 30) return false
-        // Loại bỏ màu xanh lam rực (nước/bầu trời)
-        if (b > r + 15 || b > g + 20) return false
-        // Loại bỏ màu đỏ chói
-        if (r > g + 60 && r > b + 60) return false
-
-        // Độ bão hòa thấp đến vừa phải
-        val maxC = maxOf(r, maxOf(g, b))
-        val minC = minOf(r, minOf(g, b))
-        val diff = maxC - minC
-        return diff in 22..75
-    }
-
-    private data class BacteriumDetectionResult(
-        val found: Boolean,
-        val bufferX: Int,
-        val bufferY: Int,
-        val rodWidth: Int,
-        val rodHeight: Int,
-        val confidence: Float
-    )
-
-    /**
-     * Thuật toán phân tích hình thái học không gian phát hiện "vi khuẩn hình que dọc":
-     * - Quét dải pixel màu da nhợt theo chiều dọc (vertical rod morphology)
-     * - Tỷ lệ chiều cao / bề ngang (Aspect Ratio) >= 1.35
-     * - Lọc nhiễu sắc tố hỗn tạp xung quanh
-     */
-    private fun detectVerticalRodBacterium(
-        buffer: java.nio.ByteBuffer,
-        rowStride: Int,
-        pixelStride: Int,
-        imgWidth: Int,
-        imgHeight: Int,
-        retinaX: Int,
-        retinaY: Int
-    ): BacteriumDetectionResult {
-        val searchRadiusX = 85
-        val searchRadiusY = 45
-
-        val startX = (retinaX - searchRadiusX).coerceIn(0, imgWidth - 1)
-        val endX = (retinaX + searchRadiusX).coerceIn(0, imgWidth - 1)
-        val startY = (retinaY - searchRadiusY).coerceIn(0, imgHeight - 1)
-        val endY = (retinaY + searchRadiusY).coerceIn(0, imgHeight - 1)
-
-        val capacity = buffer.capacity()
-
-        var bestX = 0
-        var bestY = 0
-        var bestHeight = 0
-        var bestWidth = 0
-        var bestConfidence = 0f
-
-        var currentRodSpanStart = -1
-        var currentRodTotalHeight = 0
-        var currentRodColumnSpan = 0
-        var accumulatedX = 0L
-        var accumulatedY = 0L
-        var totalRodPixels = 0
-
-        // Quét theo bước nhảy 2 pixel để duy trì tốc độ ~125Hz
-        for (x in startX..endX step 2) {
-            var colMaxRun = 0
-            var colCurrentRun = 0
-            var colRunCenterY = 0
-
-            for (y in startY..endY step 2) {
-                val offset = y * rowStride + x * pixelStride
-                if (offset + 2 < capacity) {
-                    val r = buffer.get(offset).toInt() and 0xFF
-                    val g = buffer.get(offset + 1).toInt() and 0xFF
-                    val b = buffer.get(offset + 2).toInt() and 0xFF
-
-                    if (isPaleNearWhiteColor(r, g, b)) {
-                        colCurrentRun++
-                        if (colCurrentRun > colMaxRun) {
-                            colMaxRun = colCurrentRun
-                            colRunCenterY = y - (colCurrentRun / 2) * 2
-                        }
-                    } else {
-                        colCurrentRun = 0
-                    }
-                }
-            }
-
-            // Đoạn que dọc liên tiếp >= 4 bước (tương đương >= 8px buffer)
-            if (colMaxRun >= 4) {
-                if (currentRodSpanStart == -1) {
-                    currentRodSpanStart = x
-                }
-                currentRodColumnSpan++
-                currentRodTotalHeight += colMaxRun * 2
-                accumulatedX += x * colMaxRun
-                accumulatedY += colRunCenterY * colMaxRun
-                totalRodPixels += colMaxRun
-            } else {
-                if (currentRodColumnSpan in 1..8 && totalRodPixels >= 6) {
-                    val avgHeight = currentRodTotalHeight / currentRodColumnSpan
-                    val width = (currentRodColumnSpan * 2).coerceAtLeast(2)
-                    val aspectRatio = avgHeight.toFloat() / width.toFloat()
-
-                    if (aspectRatio >= 1.35f) {
-                        val centerX = (accumulatedX / totalRodPixels).toInt()
-                        val centerY = (accumulatedY / totalRodPixels).toInt()
-                        val conf = (aspectRatio * 1.5f + (totalRodPixels / 10f)).coerceAtMost(10f)
-
-                        if (conf > bestConfidence) {
-                            bestConfidence = conf
-                            bestX = centerX
-                            bestY = centerY
-                            bestWidth = width
-                            bestHeight = avgHeight
-                        }
-                    }
-                }
-                currentRodSpanStart = -1
-                currentRodColumnSpan = 0
-                currentRodTotalHeight = 0
-                accumulatedX = 0L
-                accumulatedY = 0L
-                totalRodPixels = 0
-            }
-        }
-
-        return if (bestConfidence > 1.8f) {
-            BacteriumDetectionResult(
-                found = true,
-                bufferX = bestX,
-                bufferY = bestY,
-                rodWidth = bestWidth,
-                rodHeight = bestHeight,
-                confidence = bestConfidence
-            )
-        } else {
-            BacteriumDetectionResult(false, 0, 0, 0, 0, 0f)
-        }
-    }
-
     private fun startCaptureLoop() {
         captureLoopJob?.cancel()
         captureLoopJob = serviceScope.launch {
@@ -472,7 +312,6 @@ class ScreenCaptureService : Service() {
             var framesCounted = 0
             var currentFps = 0
             var totalProcessedFrames = 0L
-            var totalBacteriumSwipes = 0L
 
             var lastDetectionResult = DetectionResult.SCANNING
 
@@ -612,92 +451,21 @@ class ScreenCaptureService : Service() {
                                 val reflexDecision = neuralReflex.process(result, detectionTimestamp)
 
                                 if (reflexDecision == ReflexDecision.REFLEX_TAP && DetectionState.isMotorReflexEnabled) {
-                                    NeuralAccessibilityService.dispatchTap(
-                                        x = DetectionState.TAP_X,
-                                        y = DetectionState.TAP_Y,
-                                        detectionTimestamp = detectionTimestamp,
-                                        onLatencyMeasured = { latencyMs ->
-                                            neuralReflex.recordLatency(latencyMs)
-                                        }
-                                    )
-                                }
-
-                                // Cơ chế phản xạ vận động thần kinh tự động săn bắt vi khuẩn hình que dọc:
-                                if (DetectionState.isBacteriumTrackingEnabled && DetectionState.isMotorReflexEnabled) {
-                                    val bacResult = detectVerticalRodBacterium(
-                                        buffer = buffer,
-                                        rowStride = rowStride,
-                                        pixelStride = pixelStride,
-                                        imgWidth = imgWidth,
-                                        imgHeight = imgHeight,
-                                        retinaX = targetCenterX,
-                                        retinaY = targetCenterY
-                                    )
-
-                                    if (bacResult.found) {
-                                        val bacteriumRealX = (bacResult.bufferX * downscale).coerceIn(0, DetectionState.TARGET_WIDTH)
-                                        val bacteriumRealY = (bacResult.bufferY * downscale).coerceIn(0, DetectionState.TARGET_HEIGHT)
-
-                                        val deltaX = bacteriumRealX - fullTargetCenterX
-                                        val deltaY = bacteriumRealY - fullTargetCenterY
-
-                                        val motorX = DetectionState.PERIPHERAL_MOTOR_X
-                                        val motorY = DetectionState.PERIPHERAL_MOTOR_Y
-
-                                        val deadZonePx = 8
-                                        val isLocked = kotlin.math.abs(deltaX) <= deadZonePx
-
-                                        val swipeDirection = when {
-                                            isLocked -> "🎯 GHIM CHẶT VÀO TÂM"
-                                            deltaX > 0 -> "KÉO SANG PHẢI (→)"
-                                            else -> "KÉO SANG TRÁI (←)"
-                                        }
-
-                                        if (!isLocked) {
-                                            val sensitivity = DetectionState.trackingSensitivity
-                                            val swipeDist = (kotlin.math.abs(deltaX) * sensitivity * 0.85f).coerceIn(24f, 175f)
-                                            val swipeDx = if (deltaX > 0) swipeDist else -swipeDist
-                                            val swipeDy = (deltaY * sensitivity * 0.35f).coerceIn(-40f, 40f)
-
-                                            val endX = (motorX + swipeDx).coerceIn(40f, DetectionState.TARGET_WIDTH.toFloat() - 40f)
-                                            val endY = (motorY + swipeDy).coerceIn(40f, DetectionState.TARGET_HEIGHT.toFloat() - 40f)
-
-                                            val dispatched = NeuralAccessibilityService.dispatchSwipe(
-                                                startX = motorX,
-                                                startY = motorY,
-                                                endX = endX,
-                                                endY = endY,
-                                                durationMs = 45L,
-                                                detectionTimestamp = detectionTimestamp
-                                            )
-                                            if (dispatched) {
-                                                totalBacteriumSwipes++
-                                            }
-                                        }
-
-                                        DetectionState.updateBacteriumStatus(
-                                            BacteriumTrackingStatus(
-                                                isBacteriumFound = true,
-                                                bacteriumX = bacteriumRealX,
-                                                bacteriumY = bacteriumRealY,
-                                                deltaX = deltaX,
-                                                deltaY = deltaY,
-                                                rodConfidence = bacResult.confidence,
-                                                rodHeight = bacResult.rodHeight * downscale,
-                                                rodWidth = bacResult.rodWidth * downscale,
-                                                isTrackingActive = true,
-                                                lastSwipeDirection = swipeDirection,
-                                                swipeCount = totalBacteriumSwipes,
-                                                lastSwipeTimestamp = System.currentTimeMillis(),
-                                                statusMessage = if (isLocked) "Đã ghim chặt tâm vào vi khuẩn (ΔX: $deltaX px)" else "Đang kéo chi cơ học $swipeDirection (Lệch $deltaX px)"
-                                            )
+                                    if (DetectionState.isMacroModeEnabled) {
+                                        // Phản xạ kích hoạt chuỗi Macro nhiều điểm (Oppo Game Space / Xiaomi Game Turbo)
+                                        NeuralAccessibilityService.dispatchMacro(
+                                            profile = DetectionState.activeMacroProfile,
+                                            detectionTimestamp = detectionTimestamp
                                         )
                                     } else {
-                                        DetectionState.updateBacteriumStatus(
-                                            DetectionState.bacteriumStatusFlow.value.copy(
-                                                isBacteriumFound = false,
-                                                statusMessage = "Võng mạc đang quan sát vi khuẩn que dọc..."
-                                            )
+                                        // Phản xạ đơn điểm Tap tiêu chuẩn
+                                        NeuralAccessibilityService.dispatchTap(
+                                            x = DetectionState.TAP_X,
+                                            y = DetectionState.TAP_Y,
+                                            detectionTimestamp = detectionTimestamp,
+                                            onLatencyMeasured = { latencyMs ->
+                                                neuralReflex.recordLatency(latencyMs)
+                                            }
                                         )
                                     }
                                 }

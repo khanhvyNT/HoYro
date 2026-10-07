@@ -406,11 +406,11 @@ class OverlayService : Service() {
         }
 
         mainScope.launch {
-            DetectionState.bacteriumStatusFlow.collectLatest { bac ->
-                if (bac.isBacteriumFound) {
+            DetectionState.macroExecutionStatusFlow.collectLatest { macroStatus ->
+                if (macroStatus.isExecuting) {
                     val tv = statusTextView ?: return@collectLatest
-                    tv.text = "QUE DỌC: ${bac.lastSwipeDirection} (ΔX:${bac.deltaX})"
-                    tv.setTextColor(0xFFFBBF24.toInt())
+                    tv.text = "MACRO: ${macroStatus.activeProfileName} (${macroStatus.currentStepIndex}/${macroStatus.totalSteps})"
+                    tv.setTextColor(0xFF38BDF8.toInt()) // Sky Blue
                 }
             }
         }
