@@ -232,16 +232,69 @@ class ScreenCaptureService : Service() {
         )
     }
 
+    /**
+     * Nhận diện tâm màu cam - vàng cam (Orange / Yellow-Orange / Amber) như trong ảnh:
+     * - Sắc tố: R rất cao (>= 150), G từ trung bình đến cao (>= 95), B thấp hoặc vừa (<= 140).
+     * - Tỷ lệ G so với R cao (G >= 0.48 * R hoặc R - G <= 95) và G vượt trội so với B (G - B >= 18).
+     * - Đây là màu vòng ngắm cam / vàng cam, HOÀN TOÀN KHÔNG PHẢI là màu đỏ mục tiêu!
+     */
+    private fun isOrangeOrYellowOrange(r: Int, g: Int, b: Int): Boolean {
+        if (!DetectionState.rejectOrangeYellowFilterEnabled) return false
+        if (r >= 150 && g >= 95 && b <= 140) {
+            val rMinusG = r - g
+            val gMinusB = g - b
+            // Vàng cam / Cam: G nằm trong dải 0.48*R đến 0.95*R và G > B + 18
+            if (rMinusG in 5..95 && gMinusB >= 18) {
+                return true
+            }
+            if (g >= 115 && g >= r * 0.50f && gMinusB >= 22) {
+                return true
+            }
+        }
+        return false
+    }
+
+    /**
+     * Nhận diện dải màu trắng xanh / cyan mờ như trong ảnh:
+     * - Độ sáng cao (luminance >= 110)
+     * - Sắc xanh lam (B) hoặc xanh lục (G) tiệm cận hoặc vượt trội so với R (B >= R - 16 hoặc (B+G)/2 >= R - 8)
+     * - Thiếu sắc ấm đặc trưng của màu da người / đỏ mục tiêu (R - B < 22).
+     */
+    private fun isBluishWhiteOrCyan(r: Int, g: Int, b: Int): Boolean {
+        if (!DetectionState.rejectBluishWhiteFilterEnabled) return false
+        val lum = (r * 299 + g * 587 + b * 114) / 1000
+        if (lum >= 110) {
+            // Sắc xanh B trội hơn hoặc bám sát R (thiên xanh lam / trắng xanh)
+            if (b >= r - 16) return true
+            // Cyan / trắng xanh: G và B đều xấp xỉ hoặc cao hơn R
+            if (g >= r - 8 && b >= 105) return true
+            // Thiếu hẳn sắc ấm (R - B < 22 với B >= 105)
+            if (r - b < 22 && b >= 105) return true
+        }
+        return false
+    }
+
     private fun isRedColor(r: Int, g: Int, b: Int): Boolean {
+        // Ngăn chặn phản xạ với tâm màu cam - vàng cam hoặc dải trắng xanh
+        if (isOrangeOrYellowOrange(r, g, b)) return false
+        if (isBluishWhiteOrCyan(r, g, b)) return false
+
         val maxOther = maxOf(g, b)
-        // Adaptive red dominance:
-        // 1. High contrast red (R significantly exceeds G and B)
-        // 2. Or classic strong red
-        return (r >= 135 && r > g * 1.35f && r > b * 1.35f && (r - maxOther) >= 28) ||
-               (r >= 175 && g <= 110 && b <= 110)
+        // Chuẩn màu ĐỎ thực sự (Red Target):
+        // 1. R phải áp đảo hoàn toàn G và B (tối thiểu 1.65x)
+        // 2. G không được quá cao để tránh lọt màu cam (G <= 115 hoặc R - G >= 90)
+        // 3. Hoặc màu đỏ thẫm/thuần khiết cổ điển (R >= 170, G <= 95, B <= 95)
+        val strictRedDominance = (r >= 145 && r > g * 1.65f && r > b * 1.65f && (r - maxOther) >= 48 && (g <= 115 || (r - g) >= 90))
+        val classicPureRed = (r >= 170 && g <= 95 && b <= 95)
+
+        return strictRedDominance || classicPureRed
     }
 
     private fun isGreenColor(r: Int, g: Int, b: Int): Boolean {
+        // Ngăn chặn phản xạ với dải màu trắng xanh hoặc màu cam
+        if (isBluishWhiteOrCyan(r, g, b)) return false
+        if (isOrangeOrYellowOrange(r, g, b)) return false
+
         val maxOther = maxOf(r, b)
         // Adaptive green dominance (strictly checking B prevents mistaking cyan/sky/water for green):
         return (g >= 130 && g > r * 1.35f && g > b * 1.25f && (g - maxOther) >= 28) ||
@@ -250,27 +303,37 @@ class ScreenCaptureService : Service() {
 
     /**
      * Nhận diện sắc tố "màu da nhợt, gần trắng" của vi khuẩn hình que dọc:
-     * - Độ sáng cao (luminance >= 130)
-     * - Tương quan sắc tố: R, G, B đều sáng, hơi thiên ấm/da nhợt (R >= G >= B hoặc cân bằng)
-     * - Không bị bão hòa đơn sắc quá mạnh như cỏ xanh, nước biển, hay đỏ chói.
+     * - Bắt buộc phải có sắc ấm da tự nhiên: R > G > B (R - B >= 24, R - G >= 8)
+     * - Loại trừ hoàn toàn dải màu trắng xanh (isBluishWhiteOrCyan)
+     * - Loại trừ hoàn toàn tâm màu cam / vàng cam (isOrangeOrYellowOrange)
      */
     private fun isPaleNearWhiteColor(r: Int, g: Int, b: Int): Boolean {
-        if (r < 135 || g < 120 || b < 105) return false
+        // Loại trừ tuyệt đối dải màu trắng xanh và tâm màu cam - vàng cam
+        if (isBluishWhiteOrCyan(r, g, b)) return false
+        if (isOrangeOrYellowOrange(r, g, b)) return false
+
+        if (r < 140 || g < 115 || b < 85) return false
         val lum = (r * 299 + g * 587 + b * 114) / 1000
-        if (lum < 130) return false
+        if (lum < 125) return false
+
+        // Sắc ấm đặc trưng của màu da nhợt (R phải cao hơn B rõ rệt, và R cao hơn G)
+        val rMinusB = r - b
+        val rMinusG = r - g
+        if (rMinusB < 24) return false // Chặn triệt để màu trắng xanh hoặc xám lạnh
+        if (rMinusG < 8) return false  // Chặn màu vàng chanh hoặc trắng xanh
 
         // Loại bỏ màu xanh lá rực (cỏ/cây)
-        if (g > r + 22 || g > b + 32) return false
+        if (g > r + 15 || g > b + 30) return false
         // Loại bỏ màu xanh lam rực (nước/bầu trời)
-        if (b > r + 25 || b > g + 25) return false
+        if (b > r + 15 || b > g + 20) return false
         // Loại bỏ màu đỏ chói
         if (r > g + 60 && r > b + 60) return false
 
-        // Kiểm tra độ bão hòa thấp đến vừa phải (màu nhợt / gần trắng)
+        // Độ bão hòa thấp đến vừa phải
         val maxC = maxOf(r, maxOf(g, b))
         val minC = minOf(r, minOf(g, b))
         val diff = maxC - minC
-        return diff <= 65
+        return diff in 22..75
     }
 
     private data class BacteriumDetectionResult(

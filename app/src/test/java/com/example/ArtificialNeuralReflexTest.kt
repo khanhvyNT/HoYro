@@ -131,20 +131,21 @@ class ArtificialNeuralReflexTest {
     }
 
     @Test
-    fun `test parkinson horizontal drag settings and state flows`() {
-        DetectionState.isParkinsonAutoHoldEnabled = true
-        DetectionState.horizontalDragDistanceX = 120f
-        DetectionState.horizontalDragDirection = DragDirection.RIGHT_TO_LEFT
+    fun `test color noise rejection and post tap swipe settings`() {
+        DetectionState.rejectOrangeYellowFilterEnabled = true
+        DetectionState.rejectBluishWhiteFilterEnabled = true
+        DetectionState.isPostTapSwipeEnabled = true
+        DetectionState.postTapFlickDeltaY = 20f
 
-        assertEquals(true, DetectionState.isParkinsonAutoHoldEnabled)
-        assertEquals(120f, DetectionState.horizontalDragDistanceX)
-        assertEquals(DragDirection.RIGHT_TO_LEFT, DetectionState.horizontalDragDirection)
-        assertEquals("←", DetectionState.horizontalDragDirection.symbol)
+        assertEquals(true, DetectionState.rejectOrangeYellowFilterEnabled)
+        assertEquals(true, DetectionState.rejectBluishWhiteFilterEnabled)
+        assertEquals(true, DetectionState.isPostTapSwipeEnabled)
+        assertEquals(20f, DetectionState.postTapFlickDeltaY)
 
-        DetectionState.horizontalDragDistanceX = 5f // should coerce to minimum 10f
-        assertEquals(10f, DetectionState.horizontalDragDistanceX)
+        DetectionState.rejectOrangeYellowFilterEnabled = false
+        assertEquals(false, DetectionState.rejectOrangeYellowFilterEnabled)
 
-        DetectionState.horizontalDragDirection = DragDirection.SWEEP_BIDIRECTIONAL
-        assertEquals("⇄", DetectionState.horizontalDragDirection.symbol)
+        DetectionState.rejectBluishWhiteFilterEnabled = false
+        assertEquals(false, DetectionState.rejectBluishWhiteFilterEnabled)
     }
 }

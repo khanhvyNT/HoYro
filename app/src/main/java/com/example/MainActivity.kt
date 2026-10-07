@@ -487,6 +487,10 @@ fun DeviceSpecsCard() {
                 text = "• Nhận diện màu: Kiểm tra tỷ lệ R/(G,B) tương quan (chống ánh sáng đổi màu)",
                 style = MaterialTheme.typography.bodySmall
             )
+            Text(
+                text = "• Bộ lọc nhiễu ảnh: Chặn dải màu trắng xanh và tâm vòng ngắm cam/vàng cam",
+                style = MaterialTheme.typography.bodySmall
+            )
         }
     }
 }
@@ -1767,6 +1771,74 @@ fun PreStartParametersConfigCard(isRunning: Boolean) {
                                     fontWeight = FontWeight.Bold
                                 )
                             }
+                        }
+                    }
+
+                    // 7. BỘ LỌC CHỐNG NHẦM DẢI TRẮNG XANH & TÂM CAM / VÀNG CAM (THEO HÌNH ẢNH)
+                    val rejectOrangeYellow by DetectionState.rejectOrangeYellowFilterEnabledFlow.collectAsStateWithLifecycle()
+                    val rejectBluishWhite by DetectionState.rejectBluishWhiteFilterEnabledFlow.collectAsStateWithLifecycle()
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "7. BỘ LỌC TRIỆT TIÊU NHIỄU SẮC TỐ (NÂNG CẤP THEO ẢNH):",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF38BDF8)
+                        )
+
+                        // Filter A: Reject Orange / Yellow-Orange Reticle
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "• Ngăn chặn tâm màu cam - vàng cam",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFFE2E8F0)
+                                )
+                                Text(
+                                    text = "Loại bỏ vòng ngắm cam/vàng cam, chỉ nhận diện màu ĐỎ mục tiêu thực sự",
+                                    fontSize = 9.sp,
+                                    color = Color(0xFF94A3B8)
+                                )
+                            }
+                            Switch(
+                                checked = rejectOrangeYellow,
+                                onCheckedChange = { DetectionState.rejectOrangeYellowFilterEnabled = it }
+                            )
+                        }
+
+                        // Filter B: Reject Bluish-White Band
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "• Ngăn chặn dải màu trắng xanh",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color(0xFFE2E8F0)
+                                )
+                                Text(
+                                    text = "Loại bỏ nền mây/sương trắng xanh, chỉ kích hoạt khi có sắc ấm da nhợt",
+                                    fontSize = 9.sp,
+                                    color = Color(0xFF94A3B8)
+                                )
+                            }
+                            Switch(
+                                checked = rejectBluishWhite,
+                                onCheckedChange = { DetectionState.rejectBluishWhiteFilterEnabled = it }
+                            )
                         }
                     }
                 }

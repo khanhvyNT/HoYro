@@ -90,6 +90,19 @@ object DetectionState {
     var centerPriorityEnabled: Boolean = true // Always prioritize center core over background
     var sensitivityThreshold: Float = 1.0f // Sensitivity multiplier
 
+    // Bộ lọc ngăn chặn phản xạ nhầm với dải màu trắng xanh và tâm màu cam - vàng cam
+    private val _rejectOrangeYellowFilterEnabled = MutableStateFlow(true)
+    val rejectOrangeYellowFilterEnabledFlow: StateFlow<Boolean> = _rejectOrangeYellowFilterEnabled.asStateFlow()
+    var rejectOrangeYellowFilterEnabled: Boolean
+        get() = _rejectOrangeYellowFilterEnabled.value
+        set(value) { _rejectOrangeYellowFilterEnabled.value = value }
+
+    private val _rejectBluishWhiteFilterEnabled = MutableStateFlow(true)
+    val rejectBluishWhiteFilterEnabledFlow: StateFlow<Boolean> = _rejectBluishWhiteFilterEnabled.asStateFlow()
+    var rejectBluishWhiteFilterEnabled: Boolean
+        get() = _rejectBluishWhiteFilterEnabled.value
+        set(value) { _rejectBluishWhiteFilterEnabled.value = value }
+
     // --- Performance Optimization Parameters (Ultra-Low Latency) ---
     // 1. Downscale Capture Factor: 1 = 1604x720 (Full), 2 = 802x360 (1/2, ~40-60ms gain), 4 = 401x180 (1/4)
     private val _captureDownscaleFactor = MutableStateFlow(2)
